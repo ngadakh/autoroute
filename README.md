@@ -14,8 +14,8 @@ production layer: health checks, circuit breakers, graceful degradation,
 first-class metrics, a Helm chart, and an **honest, reproducible eval harness**
 whose numbers you can re-run yourself. That is what this project is.
 
-Design and rationale: [`docs/`](docs/) · architecture overview:
-<https://claude.ai/code/artifact/acb0c124-dea8-43e5-ad7e-a7f5aa1e82c3>
+Design and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · visual
+version: <https://claude.ai/code/artifact/acb0c124-dea8-43e5-ad7e-a7f5aa1e82c3>
 
 ## How routing works
 
