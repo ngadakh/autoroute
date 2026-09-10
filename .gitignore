@@ -1,0 +1,14 @@
+# build output
+/bin/
+*.test
+*.out
+
+# spike assets fetched by scripts/setup-spike.sh
+/third_party/onnxruntime/
+/models/*/
+!/models/.gitkeep
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
