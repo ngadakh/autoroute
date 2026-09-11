@@ -1,0 +1,30 @@
+# Local demo: the proxy (mock providers, no API key needed) + Prometheus scraping it.
+#
+#   docker compose -f deploy/compose/docker-compose.yaml up --build
+#
+#   curl localhost:8080/v1/chat/completions \
+#     -H 'content-type: application/json' \
+#     -d '{"model":"fast","messages":[{"role":"user","content":"hello"}]}'
+#
+#   Prometheus UI:  http://localhost:9090
+
+services:
+  autoroute:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    # Liveness/readiness in production is HTTP GET /healthz and /readyz (see the
+    # Helm chart in M3). distroless has no shell for a container healthcheck.
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - autoroute
+    restart: unless-stopped
