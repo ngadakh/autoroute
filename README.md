@@ -3,8 +3,10 @@
 An OpenAI-compatible LLM router that picks the cheapest model likely to answer a
 prompt well — built to run in production, not as a research demo.
 
-> **Status: M0 (de-risking spike) complete.** See [`SPIKE.md`](SPIKE.md) for
-> measured results. The proxy itself does not exist yet — M1 is next.
+> **Status: M1 — proxy skeleton.** The OpenAI-compatible edge is up (forwarding,
+> streaming, health, metrics, Docker). Routing itself lands in M2; until then a
+> request names a catalogue model and the proxy forwards it 1:1.
+> M0 de-risking spike: [`SPIKE.md`](SPIKE.md).
 
 ## Why
 
@@ -17,40 +19,90 @@ whose numbers you can re-run yourself. That is what this project is.
 Design and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · visual
 version: <https://claude.ai/code/artifact/acb0c124-dea8-43e5-ad7e-a7f5aa1e82c3>
 
-## How routing works
-
-A layered pipeline; the common case makes **zero LLM calls**.
-
-| Layer | Mechanism | Added latency |
-|---|---|---|
-| **L1** | heuristics — tokens, code fences, task verbs, turns, tools | ~µs |
-| **L2** | one in-process embedding (ONNX, CPU) → nearest route centroid → tier | ~2–15 ms |
-| **L3** | *optional, gated* — a small judge model, only for the uncertain confidence band | ~300 ms |
-
-Category → model-tier mapping is config-driven (add a model without retraining).
-
-## Spike quickstart
+## Quickstart
 
 ```sh
-make setup   # fetch ONNX Runtime + all-MiniLM-L6-v2 into third_party/ and models/ (gitignored)
-make spike   # embed the worked-example prompts, print routing decisions + latency
-make test    # unit tests
+make run     # start the proxy on :8080 with mock providers (no API key needed)
 ```
 
-`make setup` downloads ~150 MB and touches nothing outside the repo.
-Requires Go 1.27+ and a C toolchain (for the ONNX Runtime CGo binding).
+```sh
+# non-streaming
+curl localhost:8080/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model":"fast","messages":[{"role":"user","content":"hello"}]}'
+
+# streaming (SSE)
+curl -N localhost:8080/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"model":"smart","stream":true,"messages":[{"role":"user","content":"hi"}]}'
+
+curl localhost:8080/healthz          # liveness
+curl localhost:8080/readyz           # readiness (503 while draining)
+curl localhost:8080/metrics          # Prometheus
+curl localhost:8080/v1/models        # catalogue
+```
+
+To use a real provider, uncomment the `openai` models in
+[`configs/catalogue.yaml`](configs/catalogue.yaml) and export `OPENAI_API_KEY`.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/v1/chat/completions` | OpenAI-compatible; forwards to the catalogue model, relays streams |
+| `GET` | `/v1/models` | catalogue as an OpenAI model list |
+| `GET` | `/healthz` | liveness — always 200 while the process serves |
+| `GET` | `/readyz` | readiness — 503 before startup and during shutdown drain |
+| `GET` | `/metrics` | Prometheus (`autoroute_http_*`, `autoroute_upstream_*`) |
+
+### Other targets
+
+```sh
+make test    # all unit tests, race detector on
+make build   # static binary -> bin/autoroute
+make docker  # distroless container image
+make demo    # proxy + Prometheus via docker compose (:8080, :9090)
+```
+
+## The M0 spike (embedding router)
+
+The routing brain was prototyped separately first — see [`SPIKE.md`](SPIKE.md).
+
+```sh
+make setup   # fetch ONNX Runtime + all-MiniLM-L6-v2 (~150 MB, into gitignored dirs)
+make spike   # embed the worked-example prompts, print routing decisions + latency
+```
+
+`make setup`/`make spike` need a C toolchain (ONNX Runtime CGo binding). The proxy
+does not — `cmd/autoroute` builds CGO-free.
 
 ## Layout
 
 ```
-cmd/spike-embed/     M0 spike entrypoint
-internal/embed/      WordPiece tokenizer + in-process ONNX embedder
-internal/router/     route exemplars + nearest-centroid L2 classifier
-scripts/             setup-spike.sh (model/runtime fetch)
+cmd/autoroute/          the proxy (M1)
+cmd/spike-embed/        M0 embedding/routing spike
+internal/config/        model catalogue (providers + client-facing models)
+internal/openai/        minimal chat-completions schema (peek + model rewrite)
+internal/provider/      upstream adapters — openai-compatible, mock
+internal/proxy/         HTTP edge: routes, relay, health, instrumentation
+internal/observability/ Prometheus metrics
+internal/embed/         WordPiece tokenizer + in-process ONNX embedder (spike)
+internal/router/        route exemplars + nearest-centroid L2 classifier (spike)
+deploy/compose/         docker-compose demo (proxy + Prometheus)
+docs/ARCHITECTURE.md    full design
 ```
 
-Planned (not yet built): `internal/proxy`, `internal/reliability`,
-`internal/observability`, `internal/shadow`, `eval/`, `deploy/helm`.
+Planned: `internal/reliability`, `internal/shadow`, `eval/`, `deploy/helm`.
+
+## Roadmap
+
+| | Branch | State |
+|---|---|---|
+| M0 | `m0-spike` | ✅ in-process ONNX embedding + nearest-centroid router |
+| **M1** | `m1-proxy-skeleton` | **⬅ OpenAI-compatible proxy: forward, stream, health, metrics, Docker** |
+| M2 | `m2-layered-router` | L1 heuristics + L2 embedding + confidence band; decision log |
+| M3 | `m3-reliability-observability` | breakers, fallback chain, full metrics, Grafana, Helm |
+| M4 | `m4-eval-harness` | RouterBench replay, published numbers, break-even |
+| M5 | `m5-shadow-detector` | shadow sampling + quality-delta metric |
+| M6 | `m6-flagship-polish` | README, blog, demo |
 
 ## License
 

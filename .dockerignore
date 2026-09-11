@@ -1,0 +1,10 @@
+.git
+.github
+bin
+third_party
+models
+docs
+*.md
+!README.md
+deploy
+.DS_Store

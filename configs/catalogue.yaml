@@ -1,0 +1,44 @@
+# AutoRoute model catalogue.
+#
+# In M1 there is no routing: a client sends one of the `name`s below as the
+# request "model", and the proxy forwards it to that provider's `upstream`
+# model. M2 will let clients ask for a tier ("auto") and have AutoRoute choose.
+#
+# The `mock` provider needs no API key and is used for local runs, tests and the
+# docker-compose demo. Uncomment the openai models once OPENAI_API_KEY is set.
+
+providers:
+  mock:
+    type: mock
+
+  openai:
+    type: openai
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+
+models:
+  # --- always available, no key required -------------------------------------
+  - name: fast
+    provider: mock
+    upstream: mock-fast
+    price_per_mtok_in: 0.15
+    price_per_mtok_out: 0.60
+
+  - name: smart
+    provider: mock
+    upstream: mock-smart
+    price_per_mtok_in: 3.00
+    price_per_mtok_out: 15.00
+
+  # --- real upstreams (need OPENAI_API_KEY) ---------------------------------
+  # - name: gpt-4o-mini
+  #   provider: openai
+  #   upstream: gpt-4o-mini
+  #   price_per_mtok_in: 0.15
+  #   price_per_mtok_out: 0.60
+  #
+  # - name: gpt-4o
+  #   provider: openai
+  #   upstream: gpt-4o
+  #   price_per_mtok_in: 2.50
+  #   price_per_mtok_out: 10.00

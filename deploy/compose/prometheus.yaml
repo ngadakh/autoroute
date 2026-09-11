@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: autoroute
+    static_configs:
+      - targets: ["autoroute:8080"]
