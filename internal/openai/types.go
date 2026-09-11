@@ -16,9 +16,11 @@ type Message struct {
 
 // Request is the subset of POST /v1/chat/completions AutoRoute inspects.
 type Request struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model          string            `json:"model"`
+	Messages       []Message         `json:"messages"`
+	Stream         bool              `json:"stream"`
+	Tools          []json.RawMessage `json:"tools,omitempty"`
+	ResponseFormat json.RawMessage   `json:"response_format,omitempty"`
 }
 
 // Peek parses just the fields the proxy routes on, without discarding the rest.
@@ -52,8 +54,8 @@ func WithModel(body []byte, upstream string) ([]byte, error) {
 	return json.Marshal(fields)
 }
 
-// LastUserMessage returns the content of the final user turn (what the router
-// will classify in M2). Empty string if there is none.
+// LastUserMessage returns the content of the final user turn — what the L1/L2
+// router classifies. Empty string if there is none.
 func (r Request) LastUserMessage() string {
 	for i := len(r.Messages) - 1; i >= 0; i-- {
 		if r.Messages[i].Role == "user" {
@@ -61,6 +63,31 @@ func (r Request) LastUserMessage() string {
 		}
 	}
 	return ""
+}
+
+// HasTools reports whether the request declares any function/tool definitions
+// — an L1 routing signal (tool-calling requests skip the cheap tier).
+func (r Request) HasTools() bool { return len(r.Tools) > 0 }
+
+// responseFormat is the tiny slice of the OpenAI response_format object the
+// router needs: just whether the client structurally demands JSON.
+type responseFormat struct {
+	Type string `json:"type"`
+}
+
+// WantsStructuredJSON reports whether response_format asks for JSON output.
+// This is a structural signal (the client set a schema constraint), distinct
+// from a prompt that merely mentions "json" in free text — the latter is left
+// to the L2 "structured-extraction" route so the two don't overlap.
+func (r Request) WantsStructuredJSON() bool {
+	if len(r.ResponseFormat) == 0 {
+		return false
+	}
+	var rf responseFormat
+	if err := json.Unmarshal(r.ResponseFormat, &rf); err != nil {
+		return false
+	}
+	return rf.Type == "json_object" || rf.Type == "json_schema"
 }
 
 // --- response types (used by the mock provider; real upstreams are relayed raw) ---
