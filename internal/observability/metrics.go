@@ -21,7 +21,12 @@ type Metrics struct {
 	UpstreamReqs   *prometheus.CounterVec
 	UpstreamErrors *prometheus.CounterVec
 	UpstreamDur    *prometheus.HistogramVec
-	buildInfo      *prometheus.GaugeVec
+
+	RouteDecisions  *prometheus.CounterVec
+	DecisionLatency prometheus.Histogram
+	RouterDegraded  *prometheus.CounterVec
+
+	buildInfo *prometheus.GaugeVec
 }
 
 // New builds a Metrics bound to a fresh registry (plus Go/process collectors).
@@ -57,6 +62,20 @@ func New(version string) *Metrics {
 			Help:    "Time to first response from an upstream provider.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"provider", "model"}),
+		RouteDecisions: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "autoroute_route_decisions_total",
+			Help: "Router decisions, by resolved tier and the layer that decided.",
+		}, []string{"tier", "layer"}),
+		DecisionLatency: f.NewHistogram(prometheus.HistogramOpts{
+			Name: "autoroute_decision_latency_seconds",
+			Help: "Wall time the router pipeline adds before dispatch (L1 + optional L2).",
+			// L1-only is sub-millisecond; L2 embedding is single-digit ms warm.
+			Buckets: []float64{.0001, .0005, .001, .0025, .005, .01, .025, .05, .1, .25},
+		}),
+		RouterDegraded: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "autoroute_router_degraded_total",
+			Help: "Requests where the router fell back to the default tier instead of a confident decision.",
+		}, []string{"reason"}),
 		buildInfo: f.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "autoroute_build_info",
 			Help: "Build metadata; value is always 1.",
@@ -70,6 +89,16 @@ func New(version string) *Metrics {
 func (m *Metrics) ObserveHTTP(route, method string, code int, d time.Duration) {
 	m.HTTPRequests.WithLabelValues(route, method, strconv.Itoa(code)).Inc()
 	m.HTTPDuration.WithLabelValues(route).Observe(d.Seconds())
+}
+
+// ObserveRouteDecision records one router pipeline decision. degradedReason is
+// empty for a confident (non-degraded) decision.
+func (m *Metrics) ObserveRouteDecision(tier, layer, degradedReason string, d time.Duration) {
+	m.RouteDecisions.WithLabelValues(tier, layer).Inc()
+	m.DecisionLatency.Observe(d.Seconds())
+	if degradedReason != "" {
+		m.RouterDegraded.WithLabelValues(degradedReason).Inc()
+	}
 }
 
 // ObserveUpstream records one upstream call. code == 0 means no response.

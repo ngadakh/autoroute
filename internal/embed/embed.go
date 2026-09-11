@@ -1,15 +1,23 @@
+//go:build cgo
+
+// This file is the only place internal/embed touches cgo (the ONNX Runtime
+// binding). It imports github.com/yalue/onnxruntime_go, which itself uses
+// `import "C"` — but that alone doesn't give *this* file an implicit cgo
+// build constraint, since the constraint only auto-applies to a file that
+// contains `import "C"` directly. Hence the explicit tag: without it,
+// CGO_ENABLED=0 builds would still try to compile this file and fail
+// resolving the (excluded) onnxruntime_go package.
+// Dim/Cosine/meanPoolNormalise live in math.go, which has no cgo dependency
+// at all, so CGO_ENABLED=0 builds can still use the classifier math without
+// the real Embedder — see internal/router/embedder_stub.go.
 package embed
 
 import (
 	"fmt"
-	"math"
 	"sync"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
-
-// Dim is the embedding width for all-MiniLM-L6-v2.
-const Dim = 384
 
 var (
 	initOnce sync.Once
@@ -118,51 +126,6 @@ func (e *Embedder) Embed(text string) ([]float32, error) {
 	}
 
 	return meanPoolNormalise(outT.GetData(), enc.AttentionMask, Dim), nil
-}
-
-// meanPoolNormalise collapses [seq, dim] token vectors to one [dim] vector,
-// weighting by the attention mask, then L2-normalises so cosine similarity is a
-// plain dot product.
-func meanPoolNormalise(flat []float32, mask []int64, dim int) []float32 {
-	seq := len(mask)
-	out := make([]float32, dim)
-	var count float32
-	for i := 0; i < seq; i++ {
-		if mask[i] == 0 {
-			continue
-		}
-		count++
-		base := i * dim
-		for d := 0; d < dim; d++ {
-			out[d] += flat[base+d]
-		}
-	}
-	if count > 0 {
-		for d := range out {
-			out[d] /= count
-		}
-	}
-
-	var norm float64
-	for _, v := range out {
-		norm += float64(v) * float64(v)
-	}
-	if norm = math.Sqrt(norm); norm > 0 {
-		inv := float32(1 / norm)
-		for d := range out {
-			out[d] *= inv
-		}
-	}
-	return out
-}
-
-// Cosine similarity of two L2-normalised vectors (a plain dot product).
-func Cosine(a, b []float32) float32 {
-	var s float32
-	for i := range a {
-		s += a[i] * b[i]
-	}
-	return s
 }
 
 func names(info []ort.InputOutputInfo) []string {

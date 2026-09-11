@@ -1,7 +1,9 @@
 package proxy_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,9 +14,11 @@ import (
 	"testing"
 
 	"github.com/ngadakh/autoroute/internal/config"
+	"github.com/ngadakh/autoroute/internal/embed"
 	"github.com/ngadakh/autoroute/internal/observability"
 	"github.com/ngadakh/autoroute/internal/provider"
 	"github.com/ngadakh/autoroute/internal/proxy"
+	"github.com/ngadakh/autoroute/internal/router"
 )
 
 func build(t *testing.T, catalogueYAML string) *proxy.Server {
@@ -199,6 +203,156 @@ models:
 	if code := post(t, ts.URL+"/v1/chat/completions",
 		`{"model":"relay","messages":[{"role":"user","content":"x"}]}`); code != http.StatusBadGateway {
 		t.Fatalf("dead upstream = %d, want 502", code)
+	}
+}
+
+const autoCatalogue = `
+providers: {mock: {type: mock}}
+models:
+  - {name: fast, provider: mock, upstream: mock-fast}
+  - {name: smart, provider: mock, upstream: mock-smart}
+router:
+  enabled: true
+  trigger_model: auto
+  default_tier: frontier
+  theta_low: 0.2
+  theta_high: 0.6
+  tiers: {cheap: fast, mid: smart, frontier: smart}
+`
+
+// fakeEmbedder returns a fixed vector for known text and errors otherwise —
+// enough to drive router.Classifier in tests with no ONNX Runtime / cgo.
+type fakeEmbedder map[string][]float32
+
+func (f fakeEmbedder) Embed(text string) ([]float32, error) {
+	if v, ok := f[text]; ok {
+		return v, nil
+	}
+	return nil, errors.New("fakeEmbedder: no vector for text")
+}
+
+func TestAutoRoutingL1Decides(t *testing.T) {
+	s := build(t, autoCatalogue)
+	// No classifier wired at all — this prompt must resolve at L1, without
+	// ever touching L2.
+	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
+	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
+	s.TriggerModel = "auto"
+	s.SetReady(true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	body := `{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var got struct {
+		Model string `json:"model"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "mock-fast" {
+		t.Fatalf("resolved upstream = %q, want mock-fast (cheap tier, L1 factual-lookup)", got.Model)
+	}
+}
+
+func TestAutoRoutingDegradesWithoutClassifier(t *testing.T) {
+	s := build(t, autoCatalogue)
+	// Simulates the CGO_ENABLED=0 build: no classifier/embedder available.
+	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
+	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
+	s.TriggerModel = "auto"
+	var log bytes.Buffer
+	s.DecisionLog = observability.NewDecisionLog(&log)
+	s.SetReady(true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	// A prompt that doesn't match any L1 rule, so it must fall to L2 — which
+	// is unavailable — and degrade to the default tier, never a 5xx.
+	body := `{"model":"auto","messages":[{"role":"user","content":"walk me through the pros and cons of switching database engines"}]}`
+	code := post(t, ts.URL+"/v1/chat/completions", body)
+	if code != 200 {
+		t.Fatalf("status = %d, want 200 (degrade-to-passthrough, not an error)", code)
+	}
+	if !strings.Contains(log.String(), `"layer":"degraded-no-l2"`) {
+		t.Fatalf("decision log missing degraded entry: %s", log.String())
+	}
+}
+
+func TestAutoRoutingL2ConfidentMatch(t *testing.T) {
+	s := build(t, autoCatalogue)
+	routes := []router.Route{
+		{Name: "chit-chat", Tier: router.TierCheap, Exemplars: []string{"exemplar-cheap"}},
+		{Name: "deep-reasoning", Tier: router.TierFrontier, Exemplars: []string{"exemplar-frontier"}},
+	}
+	oneHot := func(i int) []float32 {
+		v := make([]float32, embed.Dim)
+		v[i] = 1
+		return v
+	}
+	emb := fakeEmbedder{
+		"exemplar-cheap":    oneHot(0),
+		"exemplar-frontier": oneHot(1),
+		// This prompt doesn't match any L1 rule (long, no code, not a
+		// question, no rewrite verb), so it reaches L2.
+		"summarise the strategic tradeoffs of this multi year vendor contract renewal": oneHot(1),
+	}
+	clf, err := router.NewClassifier(emb, routes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Router = router.NewPipeline(clf, emb, 0.2, 0.6, router.TierCheap)
+	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
+	s.TriggerModel = "auto"
+	s.SetReady(true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	body := `{"model":"auto","messages":[{"role":"user","content":"summarise the strategic tradeoffs of this multi year vendor contract renewal"}]}`
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got struct {
+		Model string `json:"model"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	if got.Model != "mock-smart" {
+		t.Fatalf("resolved upstream = %q, want mock-smart (frontier tier via L2)", got.Model)
+	}
+}
+
+// A direct model name still bypasses routing entirely, even with a router
+// configured — M1-style passthrough stays unchanged.
+func TestDirectModelNameSkipsRouting(t *testing.T) {
+	s := build(t, autoCatalogue)
+	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
+	s.TierModels = map[router.Tier]string{router.TierCheap: "fast"}
+	s.TriggerModel = "auto"
+	s.SetReady(true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	body := `{"model":"smart","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got struct {
+		Model string `json:"model"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	if got.Model != "mock-smart" {
+		t.Fatalf("resolved upstream = %q, want mock-smart (direct name, unrouted)", got.Model)
 	}
 }
 

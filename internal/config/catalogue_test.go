@@ -77,3 +77,75 @@ func TestLoadMissingFile(t *testing.T) {
 		t.Fatal("expected error for missing file")
 	}
 }
+
+const baseModelsAndProviders = `
+providers: {mock: {type: mock}}
+models:
+  - {name: fast, provider: mock, upstream: mock-fast}
+  - {name: smart, provider: mock, upstream: mock-smart}
+`
+
+func TestLoadRouterValid(t *testing.T) {
+	c, err := Load(write(t, baseModelsAndProviders+`
+router:
+  enabled: true
+  trigger_model: auto
+  default_tier: frontier
+  theta_low: 0.35
+  theta_high: 0.7
+  tiers: {cheap: fast, frontier: smart}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Router == nil || !c.Router.Enabled || c.Router.TriggerModel != "auto" {
+		t.Fatalf("router = %+v", c.Router)
+	}
+	if c.Router.Tiers["frontier"] != "smart" {
+		t.Fatalf("tiers = %+v", c.Router.Tiers)
+	}
+}
+
+func TestLoadRouterAbsentMeansDisabled(t *testing.T) {
+	c, err := Load(write(t, baseModelsAndProviders))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Router != nil {
+		t.Fatalf("router = %+v, want nil when the key is absent", c.Router)
+	}
+}
+
+func TestLoadRouterRejects(t *testing.T) {
+	cases := map[string]string{
+		"trigger_model missing": baseModelsAndProviders + `
+router: {enabled: true, default_tier: cheap, tiers: {cheap: fast}}`,
+		"trigger_model collides with a real model": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: fast, default_tier: cheap, tiers: {cheap: fast}}`,
+		"default_tier not in tiers": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: auto, default_tier: frontier, tiers: {cheap: fast}}`,
+		"tier references unknown model": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: auto, default_tier: cheap, tiers: {cheap: ghost}}`,
+		"theta_low greater than theta_high": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: auto, default_tier: cheap, theta_low: 0.8, theta_high: 0.2, tiers: {cheap: fast}}`,
+		"no tiers": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: auto, default_tier: cheap, tiers: {}}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, body)); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+		})
+	}
+}
+
+func TestLoadRouterDisabledSkipsValidation(t *testing.T) {
+	// enabled: false (the default) means a broken tiers map isn't an error —
+	// the trigger model just won't resolve to anything.
+	if _, err := Load(write(t, baseModelsAndProviders+`
+router: {trigger_model: fast, tiers: {cheap: ghost}}
+`)); err != nil {
+		t.Fatalf("disabled router should skip validation: %v", err)
+	}
+}

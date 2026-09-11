@@ -1,6 +1,9 @@
 // Package proxy is the OpenAI-compatible HTTP edge: it accepts
 // /v1/chat/completions, forwards to the provider named by the catalogue, and
-// relays the response (including SSE streams). M1 does no routing — that is M2.
+// relays the response (including SSE streams). Since M2, a request naming the
+// catalogue's router.trigger_model (e.g. "auto") is routed to a tier by the
+// layered router before forwarding; any other model name is M1-style direct
+// passthrough.
 package proxy
 
 import (
@@ -15,6 +18,7 @@ import (
 	"github.com/ngadakh/autoroute/internal/config"
 	"github.com/ngadakh/autoroute/internal/observability"
 	"github.com/ngadakh/autoroute/internal/provider"
+	"github.com/ngadakh/autoroute/internal/router"
 )
 
 // Server holds everything the HTTP handlers need.
@@ -24,6 +28,13 @@ type Server struct {
 	Metrics   *observability.Metrics
 	Logger    *slog.Logger
 	Version   string
+
+	// Router is nil when the catalogue has no router: block, or router.enabled
+	// is false — every request is then M1-style direct passthrough.
+	Router       *router.Pipeline
+	TierModels   map[router.Tier]string     // tier -> catalogue model name
+	TriggerModel string                     // client-facing "model" that opts into routing
+	DecisionLog  *observability.DecisionLog // nil disables decision logging
 
 	// maxBodyBytes caps an incoming request body (long-context prompts are big).
 	maxBodyBytes int64
