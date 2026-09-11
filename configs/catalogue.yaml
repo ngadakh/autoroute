@@ -1,8 +1,9 @@
 # AutoRoute model catalogue.
 #
-# In M1 there is no routing: a client sends one of the `name`s below as the
-# request "model", and the proxy forwards it to that provider's `upstream`
-# model. M2 will let clients ask for a tier ("auto") and have AutoRoute choose.
+# A client sends a `name` below as the request "model" for direct M1-style
+# passthrough. Sending router.trigger_model ("auto") instead opts into M2
+# routing: the layered router (internal/router) picks a tier and this file's
+# `router.tiers` maps that tier to one of the models below.
 #
 # The `mock` provider needs no API key and is used for local runs, tests and the
 # docker-compose demo. Uncomment the openai models once OPENAI_API_KEY is set.
@@ -30,6 +31,12 @@ models:
     price_per_mtok_in: 3.00
     price_per_mtok_out: 15.00
 
+  - name: genius
+    provider: mock
+    upstream: mock-genius
+    price_per_mtok_in: 15.00
+    price_per_mtok_out: 75.00
+
   # --- real upstreams (need OPENAI_API_KEY) ---------------------------------
   # - name: gpt-4o-mini
   #   provider: openai
@@ -42,3 +49,26 @@ models:
   #   upstream: gpt-4o
   #   price_per_mtok_in: 2.50
   #   price_per_mtok_out: 10.00
+
+# Layered router (M2): "model": "auto" gets classified into a tier by L1
+# heuristics, then an optional L2 embedding classifier with confidence bands
+# (internal/router). Leaving embedding.model_path/vocab_path blank — or
+# building with CGO_ENABLED=0 (the default `make build`) — keeps L2 disabled;
+# the router still works, running L1-only and resolving every L1 miss to
+# default_tier (degrade-to-passthrough). `make build-router` after `make
+# setup` enables the real ONNX-backed L2 classifier.
+router:
+  enabled: true
+  trigger_model: auto
+  default_tier: frontier
+  theta_low: 0.35
+  theta_high: 0.70
+  tiers:
+    cheap: fast
+    mid: smart
+    frontier: genius
+  embedding:
+    model_path: models/all-MiniLM-L6-v2/model.onnx
+    vocab_path: models/all-MiniLM-L6-v2/vocab.txt
+    max_seq_len: 256
+    shared_library_path: third_party/onnxruntime/lib/libonnxruntime.dylib

@@ -3,6 +3,9 @@
 *.test
 *.out
 
+# router decision log (M2), append-only, local-only
+/data/
+
 # spike assets fetched by scripts/setup-spike.sh
 /third_party/onnxruntime/
 /models/*/

@@ -8,9 +8,10 @@ import (
 	"github.com/ngadakh/autoroute/internal/openai"
 )
 
-// handleChatCompletions is the core relay. M1 forwarding is 1:1 — the request
-// names a catalogue model, the proxy rewrites it to the upstream id and streams
-// the provider's response straight back.
+// handleChatCompletions is the core relay. A request naming a catalogue model
+// directly is M1-style passthrough — the proxy rewrites it to the upstream id
+// and streams the provider's response back. A request naming
+// s.TriggerModel (e.g. "auto") is routed to a tier first (see route.go).
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBodyBytes))
 	if err != nil {
@@ -24,9 +25,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model, ok := s.Catalogue.Lookup(req.Model)
+	resolvedName := req.Model
+	if s.Router != nil && req.Model == s.TriggerModel {
+		resolvedName = s.route(req)
+	}
+
+	model, ok := s.Catalogue.Lookup(resolvedName)
 	if !ok {
-		writeError(w, http.StatusNotFound, "unknown model "+strconvQuote(req.Model)+
+		writeError(w, http.StatusNotFound, "unknown model "+strconvQuote(resolvedName)+
 			"; see GET /v1/models")
 		return
 	}
@@ -43,7 +49,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.Logger.Info("forward",
-		"model", req.Model, "upstream", model.Upstream,
+		"model", req.Model, "resolved", resolvedName, "upstream", model.Upstream,
 		"provider", model.Provider, "stream", req.Stream)
 
 	start := time.Now()
