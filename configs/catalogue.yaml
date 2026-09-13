@@ -61,6 +61,11 @@ router:
   enabled: true
   trigger_model: auto
   default_tier: frontier
+  # M3: 4th, fixed rung of the fallback chain (cheap -> mid -> frontier ->
+  # passthrough_default) once every tier has failed. Distinct from
+  # default_tier (that's about routing confidence, M2) even though the demo
+  # catalogue happens to point both at the same model.
+  passthrough_default: genius
   theta_low: 0.35
   theta_high: 0.70
   tiers:
@@ -72,3 +77,11 @@ router:
     vocab_path: models/all-MiniLM-L6-v2/vocab.txt
     max_seq_len: 256
     shared_library_path: third_party/onnxruntime/lib/libonnxruntime.dylib
+
+# Per-provider circuit breakers (M3): after breaker_failure_threshold
+# consecutive failures a provider is skipped fast (no dispatch attempt) for
+# breaker_cooldown before a single probe call decides whether to close again.
+# These are the doc's own defaults, made explicit here.
+reliability:
+  breaker_failure_threshold: 5
+  breaker_cooldown: 30s

@@ -1,0 +1,82 @@
+# Default values for the autoroute chart.
+# No image is published by this repo yet — build and push your own with
+# `make docker` (see the Dockerfile / README), then set image.repository/tag.
+
+image:
+  repository: autoroute # e.g. ghcr.io/your-org/autoroute — push your own build
+  tag: "" # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# Prometheus scrape annotations on the pod (no ServiceMonitor CRD — bring your
+# own Prometheus Operator config if you use one; this chart stays
+# dependency-free).
+metrics:
+  scrapeAnnotations: true
+  path: /metrics
+  port: 8080
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Extra env vars, e.g. for a real provider's API key baked into the pod spec
+# directly. Prefer envFromSecretName below for anything sensitive.
+env: []
+# - name: SOME_VAR
+#   value: "some-value"
+
+# Name of a Secret (created outside this chart) whose keys are exposed as env
+# vars — e.g. OPENAI_API_KEY, matching configs/catalogue.yaml's api_key_env.
+envFromSecretName: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+args:
+  logJSON: true
+  shutdownGrace: 20s
+  decisionLogPath: "" # empty disables the decision log — most k8s deployments
+  # should ship it via the pod's log pipeline instead of a local file.
+
+# Rendered verbatim into a ConfigMap and mounted at /etc/autoroute/catalogue.yaml
+# (the same path the Dockerfile's default CMD uses). Reproduces the demo mock
+# catalogue by default so `helm install` works with zero required values;
+# replace with your own providers/models/router/reliability config for a real
+# deployment — see configs/catalogue.yaml and docs/ARCHITECTURE.md.
+catalogue: |
+  providers:
+    mock:
+      type: mock
+
+  models:
+    - name: fast
+      provider: mock
+      upstream: mock-fast
+      price_per_mtok_in: 0.15
+      price_per_mtok_out: 0.60
+
+    - name: smart
+      provider: mock
+      upstream: mock-smart
+      price_per_mtok_in: 3.00
+      price_per_mtok_out: 15.00

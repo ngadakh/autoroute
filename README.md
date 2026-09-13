@@ -3,10 +3,12 @@
 An OpenAI-compatible LLM router that picks the cheapest model likely to answer a
 prompt well — built to run in production, not as a research demo.
 
-> **Status: M2 — layered router.** `"model": "auto"` is now routed to a tier by
-> L1 heuristics + an optional L2 embedding classifier with confidence bands
-> (`internal/router`); any other model name is still M1-style direct
-> passthrough. M0 de-risking spike: [`SPIKE.md`](SPIKE.md).
+> **Status: M3 — reliability & observability.** Every upstream call — routed or
+> direct — now goes through a per-provider circuit breaker; a routed (`"auto"`)
+> request that hits a failing tier falls back up the chain
+> (`cheap → mid → frontier → passthrough_default`) instead of failing the
+> client. Grafana dashboard and a Helm chart included.
+> M0 de-risking spike: [`SPIKE.md`](SPIKE.md).
 
 ## Why
 
@@ -56,7 +58,7 @@ To use a real provider, uncomment the `openai` models in
 | `GET` | `/v1/models` | catalogue as an OpenAI model list |
 | `GET` | `/healthz` | liveness — always 200 while the process serves |
 | `GET` | `/readyz` | readiness — 503 before startup and during shutdown drain |
-| `GET` | `/metrics` | Prometheus (`autoroute_http_*`, `autoroute_upstream_*`) |
+| `GET` | `/metrics` | Prometheus (`autoroute_http_*`, `autoroute_upstream_*`, `autoroute_fallback_*`, `autoroute_circuit_breaker_*`) |
 
 ### Other targets
 
@@ -65,7 +67,7 @@ make test    # all unit tests, race detector on
 make build   # static binary -> bin/autoroute (CGO-free; router runs L1-only)
 make build-router # binary with the real L2 embedding classifier (needs `make setup`)
 make docker  # distroless container image (CGO-free build)
-make demo    # proxy + Prometheus via docker compose (:8080, :9090)
+make demo    # proxy + Prometheus + Grafana via docker compose (:8080, :9090, :3000)
 ```
 
 ## The layered router (M2)
@@ -99,6 +101,41 @@ L2 needs the ONNX Runtime CGo binding; L1 doesn't. So:
 `make run`/`make test` are always `CGO_ENABLED=1` and pick up L2 automatically
 once `make setup` has run, otherwise degrade the same way.
 
+## Reliability & observability (M3)
+
+Every outgoing call — a direct-named request or a routed one — goes through
+`internal/reliability`: a circuit breaker per **provider** (not per tier), so
+several tiers sharing a provider account share its health state too. After
+`reliability.breaker_failure_threshold` (default 5) consecutive failures a
+provider is skipped fast for `reliability.breaker_cooldown` (default 30s)
+instead of hanging every request on a call likely to fail; a single probe
+after cooldown decides whether to close again.
+
+A **routed** (`"auto"`) request additionally gets a fallback chain: on a
+transient failure (transport error, or 429/500/502/503/504) it climbs from its
+assigned tier toward more capable ones — `cheap → mid → frontier`, then
+`router.passthrough_default` as the final safety net — never back down to a
+cheaper tier. A **direct-named** request (M1-style) is still exactly one
+attempt: the chain is inherently tier-shaped, so naming a specific model gets
+you that model or an honest error, not a silent substitution — it does still
+benefit from the breaker's fail-fast behavior. Every hop is counted
+(`autoroute_fallback_total{from,to}`), and breaker state/trips are their own
+metrics (`autoroute_circuit_breaker_state`, `autoroute_circuit_breaker_trips_total`).
+
+`make demo` now also brings up Grafana (`:3000`, admin/admin) with a
+pre-provisioned "AutoRoute" dashboard covering every metric from M1–M3
+(`deploy/grafana/`). `deploy/helm/autoroute/` is a minimal chart — Deployment,
+Service, ConfigMap for the catalogue, `/healthz`/`/readyz` probes, Prometheus
+scrape annotations:
+
+```sh
+helm lint deploy/helm/autoroute
+helm install autoroute deploy/helm/autoroute
+```
+
+No Ingress, HPA, PodDisruptionBudget, or ServiceMonitor CRD — bring your own
+if you need them; see `deploy/helm/autoroute/templates/NOTES.txt`.
+
 ## The M0 spike (embedding router)
 
 The routing brain was prototyped separately first — see [`SPIKE.md`](SPIKE.md).
@@ -113,18 +150,21 @@ make spike   # embed the worked-example prompts, print routing decisions + laten
 ```
 cmd/autoroute/          the proxy
 cmd/spike-embed/        M0 embedding/routing spike
-internal/config/        model catalogue + router config (providers, models, tiers)
+internal/config/        model catalogue + router + reliability config
 internal/openai/        minimal chat-completions schema (peek + model rewrite)
 internal/provider/      upstream adapters — openai-compatible, mock
-internal/proxy/         HTTP edge: routes, relay, routing, health, instrumentation
+internal/proxy/         HTTP edge: routes, relay, routing, dispatch, health, instrumentation
 internal/observability/ Prometheus metrics + the router decision log
 internal/embed/         WordPiece tokenizer + in-process ONNX embedder (cgo-isolated)
 internal/router/        L1 heuristics + L2 nearest-centroid classifier + pipeline
-deploy/compose/         docker-compose demo (proxy + Prometheus)
+internal/reliability/   per-provider circuit breakers + the fallback-chain dispatcher
+deploy/compose/         docker-compose demo (proxy + Prometheus + Grafana)
+deploy/grafana/         provisioned datasource + AutoRoute dashboard
+deploy/helm/autoroute/  Helm chart
 docs/ARCHITECTURE.md    full design
 ```
 
-Planned: `internal/reliability`, `internal/shadow`, `eval/`, `deploy/helm`.
+Planned: `internal/shadow`, `eval/`.
 
 ## Roadmap
 
@@ -132,8 +172,8 @@ Planned: `internal/reliability`, `internal/shadow`, `eval/`, `deploy/helm`.
 |---|---|---|
 | M0 | `m0-spike` | ✅ in-process ONNX embedding + nearest-centroid router |
 | M1 | `m1-proxy-skeleton` | ✅ OpenAI-compatible proxy: forward, stream, health, metrics, Docker |
-| **M2** | `m2-layered-router` | **⬅ L1 heuristics + L2 embedding + confidence band; decision log; degrade-to-passthrough** |
-| M3 | `m3-reliability-observability` | breakers, fallback chain, full metrics, Grafana, Helm |
+| M2 | `m2-layered-router` | ✅ L1 heuristics + L2 embedding + confidence band; decision log; degrade-to-passthrough |
+| **M3** | `m3-reliability-observability` | **⬅ breakers, fallback chain, full metrics, Grafana, Helm** |
 | M4 | `m4-eval-harness` | RouterBench replay, published numbers, break-even |
 | M5 | `m5-shadow-detector` | shadow sampling + quality-delta metric |
 | M6 | `m6-flagship-polish` | README, blog, demo |

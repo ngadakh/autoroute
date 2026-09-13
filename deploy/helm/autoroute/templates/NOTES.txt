@@ -1,0 +1,23 @@
+AutoRoute is deployed as {{ include "autoroute.fullname" . }}.
+
+Check rollout status:
+  kubectl rollout status deployment/{{ include "autoroute.fullname" . }}
+
+{{- if contains "ClusterIP" .Values.service.type }}
+Port-forward to reach it locally:
+  kubectl port-forward svc/{{ include "autoroute.fullname" . }} 8080:{{ .Values.service.port }}
+  curl localhost:8080/v1/chat/completions \
+    -H 'content-type: application/json' \
+    -d '{"model":"fast","messages":[{"role":"user","content":"hello"}]}'
+{{- end }}
+
+The catalogue is a ConfigMap ({{ include "autoroute.fullname" . }}-catalogue) —
+edit values.catalogue and `helm upgrade` to change providers, models, the
+router or reliability config. A provider needing an API key should get it via
+values.envFromSecretName, pointing at a Secret you create separately.
+
+Not included in this chart: Ingress, HorizontalPodAutoscaler,
+PodDisruptionBudget, a ServiceMonitor CRD. Pod-level Prometheus scrape
+annotations are on by default (metrics.scrapeAnnotations) for a plain
+Prometheus scrape_config using kubernetes_sd_configs; wire your own
+ServiceMonitor if you run the Prometheus Operator.

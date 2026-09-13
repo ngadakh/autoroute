@@ -1,0 +1,9 @@
+apiVersion: v2
+name: autoroute
+description: An OpenAI-compatible LLM router that picks the cheapest model likely to answer a prompt well.
+type: application
+version: 0.1.0
+appVersion: "dev"
+home: https://github.com/ngadakh/autoroute
+sources:
+  - https://github.com/ngadakh/autoroute

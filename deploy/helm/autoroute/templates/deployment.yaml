@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "autoroute.fullname" . }}
+  labels:
+    {{- include "autoroute.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "autoroute.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "autoroute.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/catalogue: {{ .Values.catalogue | sha256sum }}
+        {{- if .Values.metrics.scrapeAnnotations }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: {{ .Values.metrics.path | quote }}
+        prometheus.io/port: {{ .Values.metrics.port | quote }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "autoroute.serviceAccountName" . }}
+      containers:
+        - name: autoroute
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -addr=:{{ .Values.service.targetPort }}
+            - -catalogue=/etc/autoroute/catalogue.yaml
+            - -shutdown-grace={{ .Values.args.shutdownGrace }}
+            {{- if .Values.args.logJSON }}
+            - -log-json
+            {{- end }}
+            {{- if .Values.args.decisionLogPath }}
+            - -decision-log={{ .Values.args.decisionLogPath }}
+            {{- else }}
+            - -decision-log=
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.envFromSecretName }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.envFromSecretName }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: catalogue
+              mountPath: /etc/autoroute
+              readOnly: true
+      volumes:
+        - name: catalogue
+          configMap:
+            name: {{ include "autoroute.fullname" . }}-catalogue
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -18,6 +18,7 @@ import (
 	"github.com/ngadakh/autoroute/internal/observability"
 	"github.com/ngadakh/autoroute/internal/provider"
 	"github.com/ngadakh/autoroute/internal/proxy"
+	"github.com/ngadakh/autoroute/internal/reliability"
 	"github.com/ngadakh/autoroute/internal/router"
 )
 
@@ -35,7 +36,11 @@ func build(t *testing.T, catalogueYAML string) *proxy.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return proxy.New(cat, providers, observability.New("test"), nil, "test")
+	metrics := observability.New("test")
+	s := proxy.New(cat, providers, metrics, nil, "test")
+	breakers := reliability.NewBreakers(cat.Reliability.BreakerFailureThreshold, cat.Reliability.Cooldown())
+	s.Dispatcher = reliability.NewDispatcher(providers, breakers, metrics)
+	return s
 }
 
 // newServer returns a running test server with readiness already flipped on.
@@ -215,6 +220,7 @@ router:
   enabled: true
   trigger_model: auto
   default_tier: frontier
+  passthrough_default: smart
   theta_low: 0.2
   theta_high: 0.6
   tiers: {cheap: fast, mid: smart, frontier: smart}
@@ -238,6 +244,7 @@ func TestAutoRoutingL1Decides(t *testing.T) {
 	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
 	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
 	s.TriggerModel = "auto"
+	s.PassthroughDefault = "smart"
 	s.SetReady(true)
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
@@ -268,6 +275,7 @@ func TestAutoRoutingDegradesWithoutClassifier(t *testing.T) {
 	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
 	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
 	s.TriggerModel = "auto"
+	s.PassthroughDefault = "smart"
 	var log bytes.Buffer
 	s.DecisionLog = observability.NewDecisionLog(&log)
 	s.SetReady(true)
@@ -311,6 +319,7 @@ func TestAutoRoutingL2ConfidentMatch(t *testing.T) {
 	s.Router = router.NewPipeline(clf, emb, 0.2, 0.6, router.TierCheap)
 	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
 	s.TriggerModel = "auto"
+	s.PassthroughDefault = "smart"
 	s.SetReady(true)
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
@@ -337,6 +346,7 @@ func TestDirectModelNameSkipsRouting(t *testing.T) {
 	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
 	s.TierModels = map[router.Tier]string{router.TierCheap: "fast"}
 	s.TriggerModel = "auto"
+	s.PassthroughDefault = "fast"
 	s.SetReady(true)
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
@@ -375,6 +385,108 @@ func TestMetricsExposed(t *testing.T) {
 			t.Fatalf("metrics missing %q", want)
 		}
 	}
+}
+
+// deadAndAliveCatalogue: "fast" (cheap tier) points at a dead upstream, so an
+// "auto" request that L1 routes to cheap must fall back to "smart" (mid tier,
+// the mock provider) and still return 200.
+const deadAndAliveCatalogue = `
+providers:
+  dead: {type: openai, base_url: "http://127.0.0.1:1/v1", api_key_env: NOPE}
+  mock: {type: mock}
+models:
+  - {name: fast, provider: dead, upstream: m1}
+  - {name: smart, provider: mock, upstream: mock-smart}
+router:
+  enabled: true
+  trigger_model: auto
+  default_tier: frontier
+  passthrough_default: smart
+  theta_low: 0.2
+  theta_high: 0.6
+  tiers: {cheap: fast, mid: smart, frontier: smart}
+`
+
+func TestAutoRoutingFallsBackAcrossTiersOnProviderFailure(t *testing.T) {
+	s := build(t, deadAndAliveCatalogue)
+	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
+	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
+	s.TriggerModel = "auto"
+	s.PassthroughDefault = "smart"
+	s.SetReady(true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	// Short factual question -> L1 decides "cheap" -> "fast" -> dead upstream
+	// -> must fall back to "smart" and still succeed.
+	body := `{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200 (fell back to a healthy tier)", resp.StatusCode)
+	}
+	var got struct {
+		Model string `json:"model"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	if got.Model != "mock-smart" {
+		t.Fatalf("resolved upstream = %q, want mock-smart (fell back from dead cheap tier)", got.Model)
+	}
+
+	metrics, _ := io.ReadAll(mustGet(t, ts.URL+"/metrics"))
+	if !strings.Contains(string(metrics), `autoroute_fallback_total{from="fast",to="smart"}`) {
+		t.Fatalf("metrics missing fallback counter:\n%s", metrics)
+	}
+	if !strings.Contains(string(metrics), "autoroute_circuit_breaker_state") {
+		t.Fatalf("metrics missing breaker state gauge:\n%s", metrics)
+	}
+}
+
+// allDeadCatalogue: every candidate a routed request could reach is dead.
+const allDeadCatalogue = `
+providers:
+  dead1: {type: openai, base_url: "http://127.0.0.1:1/v1", api_key_env: NOPE}
+  dead2: {type: openai, base_url: "http://127.0.0.1:2/v1", api_key_env: NOPE}
+models:
+  - {name: fast, provider: dead1, upstream: m1}
+  - {name: smart, provider: dead2, upstream: m2}
+router:
+  enabled: true
+  trigger_model: auto
+  default_tier: frontier
+  passthrough_default: smart
+  theta_low: 0.2
+  theta_high: 0.6
+  tiers: {cheap: fast, mid: smart, frontier: smart}
+`
+
+func TestAutoRoutingAllCandidatesFailDegradesCleanly(t *testing.T) {
+	s := build(t, allDeadCatalogue)
+	s.Router = router.NewPipeline(nil, nil, 0.2, 0.6, router.TierFrontier)
+	s.TierModels = map[router.Tier]string{router.TierCheap: "fast", router.TierMid: "smart", router.TierFrontier: "smart"}
+	s.TriggerModel = "auto"
+	s.PassthroughDefault = "smart"
+	s.SetReady(true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	body := `{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	code := post(t, ts.URL+"/v1/chat/completions", body)
+	if code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 (every candidate dead — an honest failure, not a hang or panic)", code)
+	}
+}
+
+func mustGet(t *testing.T, url string) io.ReadCloser {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.Body
 }
 
 // --- helpers ---

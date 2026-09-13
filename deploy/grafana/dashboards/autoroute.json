@@ -1,0 +1,171 @@
+{
+  "title": "AutoRoute",
+  "uid": "autoroute",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
+  "tags": ["autoroute"],
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP request rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_http_requests_total[$__rate_interval])) by (route, code)",
+          "legendFormat": "{{route}} {{code}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP p95 latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "histogram_quantile(0.95, sum(rate(autoroute_http_request_duration_seconds_bucket[$__rate_interval])) by (le, route))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Upstream request rate & errors",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_upstream_requests_total[$__rate_interval])) by (provider, model, code)",
+          "legendFormat": "{{provider}}/{{model}} {{code}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_upstream_errors_total[$__rate_interval])) by (provider, model)",
+          "legendFormat": "{{provider}}/{{model}} transport-error"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Upstream p95 latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "histogram_quantile(0.95, sum(rate(autoroute_upstream_request_duration_seconds_bucket[$__rate_interval])) by (le, provider, model))",
+          "legendFormat": "{{provider}}/{{model}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Route decisions by tier & layer",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_route_decisions_total[$__rate_interval])) by (tier, layer)",
+          "legendFormat": "{{tier}} / {{layer}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Decision latency (p95) & router-degraded rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "histogram_quantile(0.95, sum(rate(autoroute_decision_latency_seconds_bucket[$__rate_interval])) by (le))",
+          "legendFormat": "decision p95 (s)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_router_degraded_total[$__rate_interval])) by (reason)",
+          "legendFormat": "degraded: {{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Fallback rate (M3 dispatch chain)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_fallback_total[$__rate_interval])) by (from, to)",
+          "legendFormat": "{{from}} -> {{to}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Circuit breaker trips",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "sum(rate(autoroute_circuit_breaker_trips_total[$__rate_interval])) by (provider)",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "closed", "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "half-open", "color": "yellow" } } },
+            { "type": "value", "options": { "2": { "text": "open", "color": "red" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 1, "color": "yellow" },
+              { "value": 2, "color": "red" }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus_ds" },
+          "expr": "autoroute_circuit_breaker_state",
+          "legendFormat": "{{provider}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}
