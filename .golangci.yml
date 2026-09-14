@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (net/http.ResponseWriter).Write
+        - io.WriteString
+        - (*encoding/json.Decoder).Decode
+        - (*os.File).Close
+        - (*os.File).WriteString
+        - (*github.com/ngadakh/autoroute/internal/embed.Embedder).Close

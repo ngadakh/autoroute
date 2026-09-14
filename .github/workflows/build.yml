@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go mod tidy is clean
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: build (default, cgo enabled)
+        run: go build ./...
+
+      # cmd/autoroute must stay buildable with no cgo dependency at all — the
+      # router still runs (L1 heuristics + degrade-to-passthrough) without the
+      # ONNX embedder; see internal/router/embedder_stub.go. This is the
+      # guarantee `make build`/`make docker` rely on; catch a regression here
+      # rather than at image-build time.
+      - name: build cmd/autoroute CGO-free
+        run: CGO_ENABLED=0 go build ./cmd/autoroute/... ./internal/...

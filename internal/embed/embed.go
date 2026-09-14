@@ -94,13 +94,13 @@ func (e *Embedder) Embed(text string) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer idsT.Destroy()
+	defer idsT.Destroy() //nolint:errcheck // best-effort native-memory release
 
 	maskT, err := ort.NewTensor(shape, enc.AttentionMask)
 	if err != nil {
 		return nil, err
 	}
-	defer maskT.Destroy()
+	defer maskT.Destroy() //nolint:errcheck // best-effort native-memory release
 
 	inputs := []ort.Value{idsT, maskT}
 	if len(e.inputNames) == 3 {
@@ -108,7 +108,7 @@ func (e *Embedder) Embed(text string) ([]float32, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer typesT.Destroy()
+		defer typesT.Destroy() //nolint:errcheck // best-effort native-memory release
 		inputs = append(inputs, typesT)
 	}
 
@@ -116,7 +116,7 @@ func (e *Embedder) Embed(text string) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer outT.Destroy()
+	defer outT.Destroy() //nolint:errcheck // best-effort native-memory release
 
 	e.mu.Lock()
 	err = e.session.Run(inputs, []ort.Value{outT})
