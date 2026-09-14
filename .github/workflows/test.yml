@@ -12,6 +12,14 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Below this total coverage %, the job fails. -coverpkg=./... (see below)
+  # is what makes this number meaningful: much of this codebase is tested
+  # through internal/proxy's integration-style tests, which exercise
+  # internal/provider, internal/config and internal/router via real HTTP
+  # calls — plain per-package coverage would undercount all of that.
+  COVERAGE_THRESHOLD: "50"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,7 +33,22 @@ jobs:
 
       # The ONNX embedder tests self-skip without model assets (run `make setup`
       # locally for full coverage). CGo is required by onnxruntime_go.
-      - name: go test -race
+      - name: go test -race -cover
         env:
           CGO_ENABLED: "1"
-        run: go test -race ./...
+        run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
+
+      - name: enforce coverage threshold
+        run: |
+          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "total coverage: ${total}% (threshold: ${COVERAGE_THRESHOLD}%)"
+          awk -v total="$total" -v threshold="$COVERAGE_THRESHOLD" \
+            'BEGIN { exit !(total+0 >= threshold+0) }' \
+            || { echo "::error::coverage ${total}% is below the ${COVERAGE_THRESHOLD}% threshold"; exit 1; }
+
+      - name: upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
