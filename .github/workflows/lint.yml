@@ -36,8 +36,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # golangci-lint must itself be built with a Go version >= go.mod's;
-      # "latest" avoids pinning a binary that predates a future Go bump.
+      # golangci-lint must itself be built with a Go version >= go.mod's.
+      # version: latest resolves to whatever golangci-lint-action has
+      # hardcoded as its own default, not the actual newest release — that
+      # was v1.64.8 (built with go1.24) when go.mod already said go 1.27,
+      # which fails outright ("Go language version used to build
+      # golangci-lint is lower than the targeted Go version"). Pin explicitly
+      # and bump by hand when go.mod's Go version moves.
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.13.2
