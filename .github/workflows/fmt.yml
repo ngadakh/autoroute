@@ -1,4 +1,4 @@
-name: ci
+name: fmt
 
 on:
   push:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: fmt-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  gofmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -31,21 +31,3 @@ jobs:
             echo "$out"
             exit 1
           fi
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: go mod tidy is clean
-        run: |
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-
-      - name: build
-        run: go build ./...
-
-      # The ONNX embedder tests self-skip without model assets (run `make setup`
-      # locally for full coverage). CGo is required by onnxruntime_go.
-      - name: test
-        env:
-          CGO_ENABLED: "1"
-        run: go test -race ./...

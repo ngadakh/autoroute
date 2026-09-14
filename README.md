@@ -64,6 +64,7 @@ To use a real provider, uncomment the `openai` models in
 
 ```sh
 make test    # all unit tests, race detector on
+make cover   # print per-package + total test coverage (CI gates on 50%, -coverpkg=./...)
 make build   # static binary -> bin/autoroute (CGO-free; router runs L1-only)
 make build-router # binary with the real L2 embedding classifier (needs `make setup`)
 make docker  # distroless container image (CGO-free build)

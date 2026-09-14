@@ -15,7 +15,7 @@ else
   export LD_LIBRARY_PATH := $(abspath $(ORT_LIB_DIR)):$(LD_LIBRARY_PATH)
 endif
 
-.PHONY: run build build-router docker demo setup spike test vet fmt tidy clean help
+.PHONY: run build build-router docker demo setup spike test cover vet fmt tidy clean help
 
 run: ## run the proxy locally against configs/catalogue.yaml (mock providers)
 	go run ./cmd/autoroute -catalogue configs/catalogue.yaml
@@ -40,6 +40,10 @@ spike: ## run the M0 embedding/routing spike
 
 test: ## run all unit tests with the race detector
 	CGO_ENABLED=1 go test -race ./...
+
+cover: ## print per-package + total test coverage (matches what CI gates on)
+	CGO_ENABLED=1 go test -coverpkg=./... -coverprofile=/tmp/autoroute-coverage.out ./...
+	go tool cover -func=/tmp/autoroute-coverage.out | tail -1
 
 vet: ## go vet
 	go vet ./...
