@@ -3,7 +3,9 @@
 // relays the response (including SSE streams). Since M2, a request naming the
 // catalogue's router.trigger_model (e.g. "auto") is routed to a tier by the
 // layered router before forwarding; any other model name is M1-style direct
-// passthrough.
+// passthrough. Since M3, every outgoing call — routed or direct — goes
+// through the reliability Dispatcher: per-provider circuit breakers, and for
+// routed requests a fallback chain across tiers (see route.go).
 package proxy
 
 import (
@@ -18,6 +20,7 @@ import (
 	"github.com/ngadakh/autoroute/internal/config"
 	"github.com/ngadakh/autoroute/internal/observability"
 	"github.com/ngadakh/autoroute/internal/provider"
+	"github.com/ngadakh/autoroute/internal/reliability"
 	"github.com/ngadakh/autoroute/internal/router"
 )
 
@@ -29,12 +32,18 @@ type Server struct {
 	Logger    *slog.Logger
 	Version   string
 
+	// Dispatcher performs every upstream call, direct or routed. Always
+	// non-nil in practice (New leaves it nil; cmd/autoroute always sets it) —
+	// handleChatCompletions relies on that.
+	Dispatcher *reliability.Dispatcher
+
 	// Router is nil when the catalogue has no router: block, or router.enabled
 	// is false — every request is then M1-style direct passthrough.
-	Router       *router.Pipeline
-	TierModels   map[router.Tier]string     // tier -> catalogue model name
-	TriggerModel string                     // client-facing "model" that opts into routing
-	DecisionLog  *observability.DecisionLog // nil disables decision logging
+	Router             *router.Pipeline
+	TierModels         map[router.Tier]string     // tier -> catalogue model name
+	TriggerModel       string                     // client-facing "model" that opts into routing
+	PassthroughDefault string                     // M3: final rung of the fallback chain
+	DecisionLog        *observability.DecisionLog // nil disables decision logging
 
 	// maxBodyBytes caps an incoming request body (long-context prompts are big).
 	maxBodyBytes int64

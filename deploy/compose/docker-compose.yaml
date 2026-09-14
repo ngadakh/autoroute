@@ -1,4 +1,5 @@
-# Local demo: the proxy (mock providers, no API key needed) + Prometheus scraping it.
+# Local demo: the proxy (mock providers, no API key needed) + Prometheus +
+# Grafana (pre-provisioned dashboard).
 #
 #   docker compose -f deploy/compose/docker-compose.yaml up --build
 #
@@ -7,6 +8,7 @@
 #     -d '{"model":"fast","messages":[{"role":"user","content":"hello"}]}'
 #
 #   Prometheus UI:  http://localhost:9090
+#   Grafana UI:     http://localhost:3000  (admin/admin, dashboard: AutoRoute)
 
 services:
   autoroute:
@@ -15,8 +17,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
-    # Liveness/readiness in production is HTTP GET /healthz and /readyz (see the
-    # Helm chart in M3). distroless has no shell for a container healthcheck.
+    # Liveness/readiness in production is HTTP GET /healthz and /readyz (see
+    # deploy/helm). distroless has no shell for a container healthcheck.
     restart: unless-stopped
 
   prometheus:
@@ -27,4 +29,18 @@ services:
       - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
     depends_on:
       - autoroute
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
     restart: unless-stopped

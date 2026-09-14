@@ -6,7 +6,9 @@
 // block also routes requests naming router.trigger_model (e.g. "auto") to a
 // tier via L1 heuristics + an optional L2 embedding classifier — see
 // internal/router. The default build (CGO_ENABLED=0) runs L1-only; `make
-// build-router` (CGO_ENABLED=1, after `make setup`) adds L2.
+// build-router` (CGO_ENABLED=1, after `make setup`) adds L2. Since M3, every
+// upstream call goes through internal/reliability: a per-provider circuit
+// breaker, and for routed requests a fallback chain across tiers.
 package main
 
 import (
@@ -27,6 +29,7 @@ import (
 	"github.com/ngadakh/autoroute/internal/observability"
 	"github.com/ngadakh/autoroute/internal/provider"
 	"github.com/ngadakh/autoroute/internal/proxy"
+	"github.com/ngadakh/autoroute/internal/reliability"
 	"github.com/ngadakh/autoroute/internal/router"
 )
 
@@ -82,11 +85,15 @@ func run(addr, cataloguePath, decisionLogPath string, grace time.Duration, logge
 
 	srv := proxy.New(cat, providers, metrics, logger, version)
 
+	breakers := reliability.NewBreakers(cat.Reliability.BreakerFailureThreshold, cat.Reliability.Cooldown())
+	srv.Dispatcher = reliability.NewDispatcher(providers, breakers, metrics)
+
 	if cat.Router != nil && cat.Router.Enabled {
 		pipeline, tierModels := buildRouter(cat.Router, logger)
 		srv.Router = pipeline
 		srv.TierModels = tierModels
 		srv.TriggerModel = cat.Router.TriggerModel
+		srv.PassthroughDefault = cat.Router.PassthroughDefault
 
 		if decisionLogPath != "" {
 			f, err := openDecisionLog(decisionLogPath)

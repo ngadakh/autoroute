@@ -26,6 +26,10 @@ type Metrics struct {
 	DecisionLatency prometheus.Histogram
 	RouterDegraded  *prometheus.CounterVec
 
+	RouteFallbacks *prometheus.CounterVec
+	BreakerState   *prometheus.GaugeVec
+	BreakerTrips   *prometheus.CounterVec
+
 	buildInfo *prometheus.GaugeVec
 }
 
@@ -76,6 +80,18 @@ func New(version string) *Metrics {
 			Name: "autoroute_router_degraded_total",
 			Help: "Requests where the router fell back to the default tier instead of a confident decision.",
 		}, []string{"reason"}),
+		RouteFallbacks: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "autoroute_fallback_total",
+			Help: "Dispatch moved from one candidate model to the next — a provider failure, or its circuit already open.",
+		}, []string{"from", "to"}),
+		BreakerState: f.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "autoroute_circuit_breaker_state",
+			Help: "Per-provider circuit breaker state: 0=closed, 1=half-open, 2=open.",
+		}, []string{"provider"}),
+		BreakerTrips: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "autoroute_circuit_breaker_trips_total",
+			Help: "Times a provider's circuit breaker tripped open — an early signal that provider is degrading.",
+		}, []string{"provider"}),
 		buildInfo: f.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "autoroute_build_info",
 			Help: "Build metadata; value is always 1.",
@@ -99,6 +115,23 @@ func (m *Metrics) ObserveRouteDecision(tier, layer, degradedReason string, d tim
 	if degradedReason != "" {
 		m.RouterDegraded.WithLabelValues(degradedReason).Inc()
 	}
+}
+
+// ObserveFallback records dispatch moving from one candidate model to the
+// next.
+func (m *Metrics) ObserveFallback(from, to string) {
+	m.RouteFallbacks.WithLabelValues(from, to).Inc()
+}
+
+// SetBreakerState publishes a provider's current circuit breaker state
+// (0=closed, 1=half-open, 2=open).
+func (m *Metrics) SetBreakerState(provider string, state int) {
+	m.BreakerState.WithLabelValues(provider).Set(float64(state))
+}
+
+// IncBreakerTrip counts a provider's circuit breaker transitioning to Open.
+func (m *Metrics) IncBreakerTrip(provider string) {
+	m.BreakerTrips.WithLabelValues(provider).Inc()
 }
 
 // ObserveUpstream records one upstream call. code == 0 means no response.

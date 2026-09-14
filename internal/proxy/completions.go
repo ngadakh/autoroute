@@ -3,15 +3,17 @@ package proxy
 import (
 	"io"
 	"net/http"
-	"time"
 
+	"github.com/ngadakh/autoroute/internal/config"
 	"github.com/ngadakh/autoroute/internal/openai"
 )
 
 // handleChatCompletions is the core relay. A request naming a catalogue model
-// directly is M1-style passthrough — the proxy rewrites it to the upstream id
-// and streams the provider's response back. A request naming
-// s.TriggerModel (e.g. "auto") is routed to a tier first (see route.go).
+// directly is M1-style passthrough: a single candidate, no fallback (though
+// its provider's circuit breaker still applies — see internal/reliability).
+// A request naming s.TriggerModel (e.g. "auto") is routed to a tier (see
+// route.go) and dispatched against the M3 fallback chain: that tier, then
+// more capable tiers, then s.PassthroughDefault.
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBodyBytes))
 	if err != nil {
@@ -25,42 +27,36 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var candidates []config.Model
 	resolvedName := req.Model
 	if s.Router != nil && req.Model == s.TriggerModel {
-		resolvedName = s.route(req)
+		name, tier := s.route(req)
+		resolvedName = name
+		candidates = s.chainFor(tier)
+	} else {
+		model, ok := s.Catalogue.Lookup(req.Model)
+		if !ok {
+			writeError(w, http.StatusNotFound, "unknown model "+strconvQuote(req.Model)+
+				"; see GET /v1/models")
+			return
+		}
+		candidates = []config.Model{model}
 	}
-
-	model, ok := s.Catalogue.Lookup(resolvedName)
-	if !ok {
-		writeError(w, http.StatusNotFound, "unknown model "+strconvQuote(resolvedName)+
-			"; see GET /v1/models")
+	if len(candidates) == 0 {
+		writeError(w, http.StatusInternalServerError, "router produced no candidate models")
 		return
 	}
-	prov, ok := s.Providers.Get(model.Provider)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "provider "+model.Provider+" not configured")
-		return
-	}
 
-	upstreamBody, err := openai.WithModel(body, model.Upstream)
+	resp, used, err := s.Dispatcher.Dispatch(r.Context(), candidates, body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "could not rewrite model field: "+err.Error())
-		return
-	}
-
-	s.Logger.Info("forward",
-		"model", req.Model, "resolved", resolvedName, "upstream", model.Upstream,
-		"provider", model.Provider, "stream", req.Stream)
-
-	start := time.Now()
-	resp, err := prov.Do(r.Context(), upstreamBody)
-	if err != nil {
-		s.Metrics.ObserveUpstream(model.Provider, model.Upstream, 0, time.Since(start), err)
-		writeError(w, http.StatusBadGateway, "upstream "+model.Provider+" unavailable: "+err.Error())
+		writeError(w, http.StatusBadGateway, "upstream "+used.Provider+" unavailable: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
-	s.Metrics.ObserveUpstream(model.Provider, model.Upstream, resp.StatusCode, time.Since(start), nil)
+
+	s.Logger.Info("forward",
+		"model", req.Model, "resolved", resolvedName, "used", used.Name, "upstream", used.Upstream,
+		"provider", used.Provider, "stream", req.Stream, "hops", len(candidates))
 
 	relay(w, resp, req.Stream)
 }
