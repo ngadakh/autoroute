@@ -3,13 +3,13 @@
 An OpenAI-compatible LLM router that picks the cheapest model likely to answer a
 prompt well — built to run in production, not as a research demo.
 
-> **Status: M5 — shadow detector.** A sampled fraction of router-decided
-> cheap-tier responses are now replayed against the frontier model, off the
-> critical path, and scored for silent quality loss
-> (`autoroute_shadow_quality_delta`) — "the metric every commercial router
-> quietly fails" per [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). A
-> Prometheus alert fires if the rolling mean exceeds 0.15. M0 de-risking
-> spike: [`SPIKE.md`](SPIKE.md).
+![demo: three prompts routed to three tiers, then the metrics that prove it](docs/demo.gif)
+
+Three prompts above, three tiers, no hardcoded model name — `auto` resolves to
+`fast`/`smart`/`genius` via the real L1/L2 router, and `autoroute_route_decisions_total`
+confirms which layer decided each one. Regenerate with `vhs docs/demo.tape`
+(or `scripts/record-demo.sh` if `vhs` can't run a headless browser in your
+environment).
 
 ## Why
 
@@ -17,10 +17,13 @@ Model routing is well-trodden (RouteLLM, Not Diamond, Martian, Arch-Router, vLLM
 Semantic Router). What is missing from the open-source options is the boring
 production layer: health checks, circuit breakers, graceful degradation,
 first-class metrics, a Helm chart, and an **honest, reproducible eval harness**
-whose numbers you can re-run yourself. That is what this project is.
+whose numbers you can re-run yourself. That is what this project is — the
+build story and the numbers that didn't flatter it are in
+[`docs/BLOG.md`](docs/BLOG.md).
 
 Design and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · visual
 version: <https://claude.ai/code/artifact/acb0c124-dea8-43e5-ad7e-a7f5aa1e82c3>
+· M0 de-risking spike: [`SPIKE.md`](SPIKE.md)
 
 ## Quickstart
 
@@ -72,7 +75,16 @@ make docker  # distroless container image (CGO-free build)
 make demo    # proxy + Prometheus + Grafana via docker compose (:8080, :9090, :3000)
 ```
 
-## The layered router (M2)
+## How it's built
+
+Four pieces, each shipped as its own milestone and still separable: a router
+that knows when it's unsure, a reliability layer that assumes upstreams will
+fail, an eval harness that publishes real numbers instead of picking flattering
+ones, and a detector for the failure mode that trips no alarm at all. The
+build story behind each is in [`docs/BLOG.md`](docs/BLOG.md); this section is
+the reference version.
+
+### The layered router (M2)
 
 `configs/catalogue.yaml`'s `router:` block turns on routing: a request naming
 `router.trigger_model` (default `auto`) is classified into a tier —
@@ -89,7 +101,7 @@ classifier — whose confidence against the nearest route decides `theta_low`/
 (`autoroute_route_decisions_total{tier,layer}`) and appended as a JSON line to
 the decision log (`-decision-log`, default `data/decisions.jsonl`).
 
-### Two build modes
+#### Two build modes
 
 L2 needs the ONNX Runtime CGo binding; L1 doesn't. So:
 
@@ -103,7 +115,7 @@ L2 needs the ONNX Runtime CGo binding; L1 doesn't. So:
 `make run`/`make test` are always `CGO_ENABLED=1` and pick up L2 automatically
 once `make setup` has run, otherwise degrade the same way.
 
-## Reliability & observability (M3)
+### Reliability & observability (M3)
 
 Every outgoing call — a direct-named request or a routed one — goes through
 `internal/reliability`: a circuit breaker per **provider** (not per tier), so
@@ -138,7 +150,7 @@ helm install autoroute deploy/helm/autoroute
 No Ingress, HPA, PodDisruptionBudget, or ServiceMonitor CRD — bring your own
 if you need them; see `deploy/helm/autoroute/templates/NOTES.txt`.
 
-## Eval harness (M4)
+### Eval harness (M4)
 
 `eval/` replays [RouterBench](https://huggingface.co/datasets/withmartian/routerbench)
 (36,497 real prompts across 86 benchmark categories — MMLU, HellaSwag, GSM8K,
@@ -168,7 +180,7 @@ human decision, not a bot's.
 
 See [`eval/RESULTS.md`](eval/RESULTS.md) for the actual numbers.
 
-## Shadow detector (M5)
+### Shadow detector (M5)
 
 A worse-but-well-formed cheap-tier answer trips no error or latency alarm —
 `internal/shadow` is the only thing that catches it. `configs/catalogue.yaml`'s
@@ -240,6 +252,9 @@ deploy/compose/prometheus-alerts.yml  the M5 ShadowQualityDegraded alert rule
 deploy/grafana/         provisioned datasource + AutoRoute dashboard
 deploy/helm/autoroute/  Helm chart
 docs/ARCHITECTURE.md    full design
+docs/BLOG.md            build story + honest findings, M0-M5
+docs/demo.tape          vhs script -> docs/demo.gif
+scripts/record-demo.sh  asciinema+agg fallback for docs/demo.gif (see docs/demo.tape)
 ```
 
 ## Roadmap
@@ -251,8 +266,8 @@ docs/ARCHITECTURE.md    full design
 | M2 | `m2-layered-router` | ✅ L1 heuristics + L2 embedding + confidence band; decision log; degrade-to-passthrough |
 | M3 | `m3-reliability-observability` | ✅ breakers, fallback chain, full metrics, Grafana, Helm |
 | M4 | `m4-eval-harness` | ✅ RouterBench replay, published numbers, break-even |
-| **M5** | `m5-shadow-detector` | **⬅ shadow sampling + quality-delta metric + alert** |
-| M6 | `m6-flagship-polish` | README, blog, demo |
+| M5 | `m5-shadow-detector` | ✅ shadow sampling + quality-delta metric + alert |
+| **M6** | `m6-flagship-polish` | **⬅ README, blog draft, demo GIF** |
 
 ## License
 
