@@ -24,7 +24,7 @@ type sample struct {
 // The six worked examples from the architecture doc, minus the failure/shadow
 // cases which are not routing decisions.
 var samples = []sample{
-	{"A trivial-lookup", "Who is the prime minister of India?", router.TierCheap},
+	{"A trivial-lookup", "What is the capital of France?", router.TierCheap},
 	{"B formal-proof", "Prove that the sum of the first n odd numbers equals n squared.", router.TierFrontier},
 	{"C code-edit", "Make this function idiomatic and add type hints: def f(x): return [i for i in x if i%2==0]", router.TierMid},
 	{"D open-judgement", "Here's my plan for a B2B pricing change - switching from seats to usage. Is this a good idea?", router.TierFrontier},

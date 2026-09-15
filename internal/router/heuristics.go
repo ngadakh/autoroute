@@ -73,7 +73,7 @@ func L1Classify(sig L1Signals) (tier Tier, reason string, ok bool) {
 		return TierCheap, "short rewrite/translate request, no code", true
 
 	case !sig.HasCodeFence && sig.Words <= 12 && questionWords.MatchString(sig.Text):
-		// example A: "Who is the prime minister of India?"
+		// example A: "What is the capital of France?"
 		return TierCheap, "short factual-lookup shape", true
 	}
 

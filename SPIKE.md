@@ -58,7 +58,7 @@ saves" bar.
 architecture doc, classified purely by L2 (no heuristics, no judge):
 
 ```
-A "Who is the prime minister of India?"            -> cheap    (factual-lookup)        conf 1.00
+A "What is the capital of France?"                 -> cheap    (factual-lookup)        conf 0.77
 B "Prove sum of first n odd numbers = n squared"   -> frontier (formal-reasoning)      conf 1.00
 C "Make this idiomatic and add type hints: ..."    -> mid      (scoped-code-edit)      conf 1.00
 D "B2B pricing change ... is this a good idea?"    -> frontier (open-judgement)        conf 1.00
@@ -66,8 +66,11 @@ E "Rewrite this sentence to sound more formal."    -> cheap    (simple-rewrite) 
 F "Extract every date ... return as JSON."         -> mid      (structured-extraction) conf 1.00
 ```
 
-**6/6 agree with hand-labels.** Top-route cosine 0.42–0.64, runner-up mostly
-< 0.25 — wide margins, hence confidence saturates at 1.00. This is a tiny,
+**6/6 agree with hand-labels.** Top-route cosine 0.24–0.64, runner-up mostly
+< 0.25 — wide margins for B–F, hence confidence saturates at 1.00 there. A is
+the one case with a real (if still correct) margin: its top match
+("factual-lookup", 0.239) beats the runner-up ("simple-rewrite", 0.124) by
+enough to clear `theta_high`, but not by as much — conf 0.77. This is a tiny,
 curated sample and the real distribution will be messier (that is what M4's
 RouterBench eval is for), but it confirms the mechanism is real, not hopeful.
 

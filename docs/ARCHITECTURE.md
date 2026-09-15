@@ -123,7 +123,7 @@ Same pipeline every time; only the layer that decides changes.
 
 | # | Prompt (abridged) | Decided at | Signal | Route |
 |---|---|---|---|---|
-| A | "Who is the prime minister of India?" | **L1** | 9 tokens · no code · single turn · factual-lookup shape | `cheap` |
+| A | "What is the capital of France?" | **L1** | 6 words · no code · single turn · factual-lookup shape | `cheap` |
 | B | "Prove the sum of the first n odd numbers is n²." | **L2**, conf 0.91 | nearest cluster "formal-math / proof" · difficulty 0.88 | `frontier` |
 | C | "Make this idiomatic and add type hints: `def f(x): …`" | **L1** | fenced code block · imperative edit verb · bounded scope | `mid` (code) |
 | D | "B2B pricing change, seats → usage. Is this a good idea?" | **L3** | L2 torn between "business-advice" and "casual-opinion" (conf 0.58 &lt; θ) → judge says "needs frontier" | `frontier` |

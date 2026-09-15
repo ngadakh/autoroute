@@ -27,7 +27,7 @@ func TestHarnessRun(t *testing.T) {
 
 	rows := []Row{
 		{
-			SampleID: "a", Prompt: "Who is the prime minister of India?",
+			SampleID: "a", Prompt: "What is the capital of France?",
 			Score: map[string]float64{cheap: 1, frontier: 1},
 			Cost:  map[string]float64{cheap: 0.0001, frontier: 0.01},
 		},

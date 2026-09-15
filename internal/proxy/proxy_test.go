@@ -249,7 +249,7 @@ func TestAutoRoutingL1Decides(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 
-	body := `{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	body := `{"model":"auto","messages":[{"role":"user","content":"What is the capital of France?"}]}`
 	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -351,7 +351,7 @@ func TestDirectModelNameSkipsRouting(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 
-	body := `{"model":"smart","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	body := `{"model":"smart","messages":[{"role":"user","content":"What is the capital of France?"}]}`
 	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -419,7 +419,7 @@ func TestAutoRoutingFallsBackAcrossTiersOnProviderFailure(t *testing.T) {
 
 	// Short factual question -> L1 decides "cheap" -> "fast" -> dead upstream
 	// -> must fall back to "smart" and still succeed.
-	body := `{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	body := `{"model":"auto","messages":[{"role":"user","content":"What is the capital of France?"}]}`
 	resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -473,7 +473,7 @@ func TestAutoRoutingAllCandidatesFailDegradesCleanly(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 
-	body := `{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}`
+	body := `{"model":"auto","messages":[{"role":"user","content":"What is the capital of France?"}]}`
 	code := post(t, ts.URL+"/v1/chat/completions", body)
 	if code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502 (every candidate dead — an honest failure, not a hang or panic)", code)
