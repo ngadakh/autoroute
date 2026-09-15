@@ -1,0 +1,62 @@
+name: eval
+
+# The M4 eval harness needs a ~100MB RouterBench download plus a cgo/ONNX
+# build — too heavy for per-PR CI like fmt/test/lint/build. This runs on
+# demand and weekly instead, and is a regression gate, not a bot: it re-runs
+# the harness and fails if the held-out numbers drift from the committed
+# eval/results.json by more than eval.CheckDrift's tolerance. It never
+# commits anything back — a real drift means a human looks at it and decides
+# whether to update eval/RESULTS.md deliberately.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: fetch ONNX Runtime + model
+        run: make setup
+
+      - name: fetch + convert RouterBench
+        run: make eval-setup
+
+      # -json/-out/-chart write to *-fresh paths, distinct from the committed
+      # eval/results.json baseline -check-against reads — otherwise the
+      # fresh run would clobber the baseline before comparing against it.
+      - name: run eval, check for drift vs committed eval/results.json
+        run: >
+          make eval EVAL_ARGS="
+          -json eval/results-fresh.json
+          -out eval/RESULTS-fresh.md
+          -chart eval/RESULTS_chart-fresh.svg
+          -check-against eval/results.json"
+
+      - name: upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: |
+            eval/RESULTS-fresh.md
+            eval/RESULTS_chart-fresh.svg
+            eval/results-fresh.json
