@@ -115,3 +115,19 @@ type Usage struct {
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
+
+// Answer extracts the first choice's message content from a non-streaming
+// chat-completion response body — used by the M5 shadow detector to pull
+// comparable text out of both the cheap and frontier responses. Reports
+// false for malformed JSON or a response with no choices, rather than
+// erroring: the caller (a best-effort shadow sample) just skips scoring.
+func Answer(body []byte) (string, bool) {
+	var resp Response
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", false
+	}
+	if len(resp.Choices) == 0 {
+		return "", false
+	}
+	return resp.Choices[0].Message.Content, true
+}

@@ -5,7 +5,10 @@
 // layered router before forwarding; any other model name is M1-style direct
 // passthrough. Since M3, every outgoing call — routed or direct — goes
 // through the reliability Dispatcher: per-provider circuit breakers, and for
-// routed requests a fallback chain across tiers (see route.go).
+// routed requests a fallback chain across tiers (see route.go). Since M5, a
+// sampled fraction of non-streaming, cheap-tier-routed responses are
+// shadow-tested against the frontier model off the critical path (see
+// shadow.go).
 package proxy
 
 import (
@@ -22,6 +25,7 @@ import (
 	"github.com/ngadakh/autoroute/internal/provider"
 	"github.com/ngadakh/autoroute/internal/reliability"
 	"github.com/ngadakh/autoroute/internal/router"
+	"github.com/ngadakh/autoroute/internal/shadow"
 )
 
 // Server holds everything the HTTP handlers need.
@@ -44,6 +48,14 @@ type Server struct {
 	TriggerModel       string                     // client-facing "model" that opts into routing
 	PassthroughDefault string                     // M3: final rung of the fallback chain
 	DecisionLog        *observability.DecisionLog // nil disables decision logging
+
+	// Shadow is nil when the catalogue has no shadow: block, or
+	// shadow.enabled is false — no request is ever shadow-sampled. See
+	// shadow.go. ShadowAlertThreshold is logged against (not enforced) when
+	// a sample's delta exceeds it; the real alert is a Prometheus rule
+	// (deploy/compose/prometheus-alerts.yml).
+	Shadow               *shadow.Sampler
+	ShadowAlertThreshold float64
 
 	// maxBodyBytes caps an incoming request body (long-context prompts are big).
 	maxBodyBytes int64

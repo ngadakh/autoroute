@@ -214,3 +214,91 @@ reliability: {breaker_cooldown: "-5s"}
 		t.Fatal("expected an error for a non-positive breaker_cooldown")
 	}
 }
+
+const validRouterBlock = `
+router:
+  enabled: true
+  trigger_model: auto
+  default_tier: frontier
+  passthrough_default: smart
+  theta_low: 0.35
+  theta_high: 0.7
+  tiers: {cheap: fast, frontier: smart}
+`
+
+func TestLoadShadowValidWithDefaults(t *testing.T) {
+	c, err := Load(write(t, baseModelsAndProviders+validRouterBlock+`
+shadow: {enabled: true}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Shadow == nil || !c.Shadow.Enabled {
+		t.Fatalf("shadow = %+v", c.Shadow)
+	}
+	if c.Shadow.SampleRate != defaultShadowSampleRate {
+		t.Fatalf("sample_rate = %v, want default %v", c.Shadow.SampleRate, defaultShadowSampleRate)
+	}
+	if c.Shadow.AlertThreshold != defaultShadowAlertThreshold {
+		t.Fatalf("alert_threshold = %v, want default %v", c.Shadow.AlertThreshold, defaultShadowAlertThreshold)
+	}
+}
+
+func TestLoadShadowCustomRates(t *testing.T) {
+	c, err := Load(write(t, baseModelsAndProviders+validRouterBlock+`
+shadow: {enabled: true, sample_rate: 0.2, alert_threshold: 0.3}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Shadow.SampleRate != 0.2 || c.Shadow.AlertThreshold != 0.3 {
+		t.Fatalf("shadow = %+v", c.Shadow)
+	}
+}
+
+func TestLoadShadowAbsentMeansDisabled(t *testing.T) {
+	c, err := Load(write(t, baseModelsAndProviders+validRouterBlock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Shadow != nil {
+		t.Fatalf("shadow = %+v, want nil when the key is absent", c.Shadow)
+	}
+}
+
+func TestLoadShadowRejects(t *testing.T) {
+	cases := map[string]string{
+		"router disabled": baseModelsAndProviders + `
+router: {enabled: false, trigger_model: auto, default_tier: frontier, passthrough_default: smart, tiers: {cheap: fast, frontier: smart}}
+shadow: {enabled: true}`,
+		"router nil (key absent)": baseModelsAndProviders + `
+shadow: {enabled: true}`,
+		"missing cheap tier": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: auto, default_tier: frontier, passthrough_default: smart, tiers: {frontier: smart}}
+shadow: {enabled: true}`,
+		"missing frontier tier": baseModelsAndProviders + `
+router: {enabled: true, trigger_model: auto, default_tier: cheap, passthrough_default: fast, tiers: {cheap: fast}}
+shadow: {enabled: true}`,
+		"sample_rate too high": baseModelsAndProviders + validRouterBlock + `
+shadow: {enabled: true, sample_rate: 1.5}`,
+		"alert_threshold too high": baseModelsAndProviders + validRouterBlock + `
+shadow: {enabled: true, alert_threshold: 2}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, body)); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+		})
+	}
+}
+
+func TestLoadShadowDisabledSkipsValidation(t *testing.T) {
+	// shadow.enabled: false (or the key absent) should never fail
+	// validation even with router disabled or bad rates - it's inert.
+	if _, err := Load(write(t, baseModelsAndProviders+`
+shadow: {enabled: false, sample_rate: 5}
+`)); err != nil {
+		t.Fatalf("disabled shadow should skip validation: %v", err)
+	}
+}

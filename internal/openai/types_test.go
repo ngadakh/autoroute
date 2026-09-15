@@ -62,3 +62,23 @@ func TestLastUserMessage(t *testing.T) {
 		t.Fatalf("empty request should yield empty string, got %q", got)
 	}
 }
+
+func TestAnswer(t *testing.T) {
+	body := `{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"hello there"}}]}`
+	got, ok := Answer([]byte(body))
+	if !ok || got != "hello there" {
+		t.Fatalf("got %q ok=%v", got, ok)
+	}
+}
+
+func TestAnswerNoChoices(t *testing.T) {
+	if _, ok := Answer([]byte(`{"id":"x","choices":[]}`)); ok {
+		t.Fatal("expected ok=false for a response with no choices")
+	}
+}
+
+func TestAnswerMalformedJSON(t *testing.T) {
+	if _, ok := Answer([]byte(`not json`)); ok {
+		t.Fatal("expected ok=false for malformed JSON")
+	}
+}

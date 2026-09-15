@@ -1,6 +1,6 @@
-// Package observability wires up the metrics AutoRoute exposes on /metrics. M1
-// covers the proxy edge (HTTP in, upstream out); routing, fallback and shadow
-// metrics arrive with their milestones.
+// Package observability wires up the metrics AutoRoute exposes on /metrics:
+// the proxy edge (HTTP in, upstream out), router decisions, dispatch
+// fallback/circuit-breaker state, and the shadow detector's quality delta.
 package observability
 
 import (
@@ -29,6 +29,8 @@ type Metrics struct {
 	RouteFallbacks *prometheus.CounterVec
 	BreakerState   *prometheus.GaugeVec
 	BreakerTrips   *prometheus.CounterVec
+
+	ShadowQualityDelta prometheus.Histogram
 
 	buildInfo *prometheus.GaugeVec
 }
@@ -92,6 +94,11 @@ func New(version string) *Metrics {
 			Name: "autoroute_circuit_breaker_trips_total",
 			Help: "Times a provider's circuit breaker tripped open — an early signal that provider is degrading.",
 		}, []string{"provider"}),
+		ShadowQualityDelta: f.NewHistogram(prometheus.HistogramOpts{
+			Name:    "autoroute_shadow_quality_delta",
+			Help:    "1 - cosine similarity between a cheap-tier answer and the frontier model's answer to the same prompt, for sampled requests (see internal/shadow). 0 = identical, larger = more different.",
+			Buckets: []float64{.05, .1, .15, .2, .3, .4, .5, .75, 1},
+		}),
 		buildInfo: f.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "autoroute_build_info",
 			Help: "Build metadata; value is always 1.",
@@ -132,6 +139,12 @@ func (m *Metrics) SetBreakerState(provider string, state int) {
 // IncBreakerTrip counts a provider's circuit breaker transitioning to Open.
 func (m *Metrics) IncBreakerTrip(provider string) {
 	m.BreakerTrips.WithLabelValues(provider).Inc()
+}
+
+// ObserveShadowDelta records one shadow comparison's quality delta (see
+// internal/shadow.Sampler.Score).
+func (m *Metrics) ObserveShadowDelta(delta float64) {
+	m.ShadowQualityDelta.Observe(delta)
 }
 
 // ObserveUpstream records one upstream call. code == 0 means no response.

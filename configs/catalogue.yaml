@@ -85,3 +85,19 @@ router:
 reliability:
   breaker_failure_threshold: 5
   breaker_cooldown: 30s
+
+# Shadow detector (M5): replay a sampled fraction of router-decided
+# cheap-tier requests against the frontier model, off the critical path, and
+# score how different the two answers are (internal/shadow) — catches a
+# well-formed but silently worse cheap answer that no error/latency metric
+# would. Requires router.enabled and an available L2 embedder (the same one
+# the router already loaded — no second model load); silently disabled
+# otherwise (logged, not fatal). sample_rate is high here (20%) so it's easy
+# to see fire during a short demo — the mock provider makes every shadow
+# call free; a real deployment would tune this down. alert_threshold is the
+# doc's own figure and also documents deploy/compose/prometheus-alerts.yml's
+# rule.
+shadow:
+  enabled: true
+  sample_rate: 0.2
+  alert_threshold: 0.15

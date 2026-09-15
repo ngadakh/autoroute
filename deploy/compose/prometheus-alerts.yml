@@ -1,0 +1,27 @@
+# M5 shadow detector alert. docs/ARCHITECTURE.md: "Alert if the rolling mean
+# delta exceeds 0.15 — a worse-but-well-formed answer trips no error or
+# latency alarm, and this is the only thing that catches it."
+#
+# rate(_sum)/rate(_count) over the window is the standard Prometheus idiom
+# for "mean of a histogram over a time range" — no separate recording rule
+# needed. This becomes visible/firing in Prometheus's own /alerts UI; no
+# Alertmanager is configured here (see README's M5 section) — wire your own
+# notification channel on top of this rule if you need one.
+groups:
+  - name: autoroute-shadow
+    rules:
+      - alert: ShadowQualityDegraded
+        expr: >
+          (rate(autoroute_shadow_quality_delta_sum[10m])
+            / rate(autoroute_shadow_quality_delta_count[10m])) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AutoRoute cheap-tier answers are drifting from frontier quality"
+          description: >
+            The rolling 10m mean of autoroute_shadow_quality_delta has stayed
+            above 0.15 for 5m — cheap-tier answers are silently diverging
+            from what the frontier model would have said. No error or
+            latency alarm catches this; see docs/ARCHITECTURE.md's
+            "silent-quality check".
