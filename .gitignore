@@ -11,6 +11,9 @@
 /models/*/
 !/models/.gitkeep
 
+# RouterBench dataset fetched by scripts/setup-routerbench.sh (M4 eval harness)
+/eval/data/
+
 # editor / OS
 .DS_Store
 .idea/

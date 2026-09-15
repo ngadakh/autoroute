@@ -1,0 +1,39 @@
+{
+  "mode": "L1+L2 (real ONNX embedder)",
+  "train": {
+    "n": 32061,
+    "routed_cost": 111.43164820000037,
+    "baseline_cost": 113.36894000000035,
+    "routed_score_sum": 24727.099999999995,
+    "baseline_score_sum": 24907.499999999996,
+    "cheap_model_recall": 0.007564959982458064,
+    "by_layer": {
+      "L2": 6629,
+      "L2-band-default": 6967,
+      "degraded-low-confidence": 18465
+    },
+    "by_tier": {
+      "cheap": 247,
+      "frontier": 31501,
+      "mid": 313
+    }
+  },
+  "held_out": {
+    "n": 4436,
+    "routed_cost": 6.63750840000002,
+    "baseline_cost": 6.806660000000025,
+    "routed_score_sum": 3568,
+    "baseline_score_sum": 3611.25,
+    "cheap_model_recall": 0.023982152816508645,
+    "by_layer": {
+      "L2": 195,
+      "L2-band-default": 1051,
+      "degraded-low-confidence": 3190
+    },
+    "by_tier": {
+      "cheap": 101,
+      "frontier": 4313,
+      "mid": 22
+    }
+  }
+}

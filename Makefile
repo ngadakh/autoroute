@@ -15,7 +15,7 @@ else
   export LD_LIBRARY_PATH := $(abspath $(ORT_LIB_DIR)):$(LD_LIBRARY_PATH)
 endif
 
-.PHONY: run build build-router docker demo setup spike test cover vet fmt tidy clean help
+.PHONY: run build build-router docker demo setup spike test cover vet fmt tidy clean help eval-setup eval
 
 run: ## run the proxy locally against configs/catalogue.yaml (mock providers)
 	go run ./cmd/autoroute -catalogue configs/catalogue.yaml
@@ -38,6 +38,12 @@ setup: ## fetch ONNX Runtime + model files for the spike (idempotent)
 spike: ## run the M0 embedding/routing spike
 	go run ./cmd/spike-embed
 
+eval-setup: ## fetch + convert RouterBench for the eval harness (idempotent)
+	./scripts/setup-routerbench.sh
+
+eval: ## replay RouterBench through the router, write eval/RESULTS.md + chart (needs `make setup` + `make eval-setup`; pass EVAL_ARGS="-check-against eval/results.json" for the CI drift gate)
+	CGO_ENABLED=1 go run ./cmd/eval $(EVAL_ARGS)
+
 test: ## run all unit tests with the race detector
 	CGO_ENABLED=1 go test -race ./...
 
@@ -55,7 +61,7 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf bin third_party/onnxruntime models/all-MiniLM-L6-v2
+	rm -rf bin third_party/onnxruntime models/all-MiniLM-L6-v2 eval/data
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

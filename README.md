@@ -3,12 +3,16 @@
 An OpenAI-compatible LLM router that picks the cheapest model likely to answer a
 prompt well — built to run in production, not as a research demo.
 
-> **Status: M3 — reliability & observability.** Every upstream call — routed or
-> direct — now goes through a per-provider circuit breaker; a routed (`"auto"`)
-> request that hits a failing tier falls back up the chain
-> (`cheap → mid → frontier → passthrough_default`) instead of failing the
-> client. Grafana dashboard and a Helm chart included.
-> M0 de-risking spike: [`SPIKE.md`](SPIKE.md).
+> **Status: M4 — eval harness.** [`eval/RESULTS.md`](eval/RESULTS.md) replays
+> RouterBench (36,497 real prompts, 11 models, real cost + correctness data)
+> through the actual router pipeline — re-runnable with `make eval-setup &&
+> make eval`, not a claimed number. Real held-out result: **2.5% cheaper than
+> always-frontier at 80.4% vs 81.4% accuracy** — but L1 heuristics decided
+> only 0.0% of rows and 95.6% landed in the conservative default, because the
+> M0-M2 route exemplars were authored for assistant chat, not academic-exam
+> benchmarks. That gap is the finding, reported honestly rather than hidden —
+> see `eval/RESULTS.md`'s "What this suggests". M0 de-risking spike:
+> [`SPIKE.md`](SPIKE.md).
 
 ## Why
 
@@ -137,6 +141,36 @@ helm install autoroute deploy/helm/autoroute
 No Ingress, HPA, PodDisruptionBudget, or ServiceMonitor CRD — bring your own
 if you need them; see `deploy/helm/autoroute/templates/NOTES.txt`.
 
+## Eval harness (M4)
+
+`eval/` replays [RouterBench](https://huggingface.co/datasets/withmartian/routerbench)
+(36,497 real prompts across 86 benchmark categories — MMLU, HellaSwag, GSM8K,
+MT-Bench, Winogrande, ARC-Challenge and more; DOI `10.57967/hf/1996`) through
+the **exact same** `router.ExtractSignals` → `RouteL1` → `RouteL2` path
+`internal/proxy` drives in production (`eval/harness.go`) — not a
+reimplementation that could quietly drift from what actually ships.
+RouterBench already ran 11 real models against every prompt and recorded
+cost + correctness, so the harness needs no API keys: it looks a routed
+prompt's chosen model up in that table.
+
+```sh
+make eval-setup   # fetch RouterBench (~100MB) + convert pickle -> csv (needs python3/pip)
+make eval         # replay it, write eval/RESULTS.md + eval/RESULTS_chart.svg + eval/results.json
+```
+
+AutoRoute's three tiers map onto RouterBench's cheapest, a mid-cost, and the
+highest-quality model (picked by cost from the dataset itself — see
+`eval.Tiers` in `eval/harness.go`). Rows are split by benchmark category
+(`eval/split.go`): ~80% train, ~20% held out — deterministic, and honest by
+construction since nothing in `internal/router` was tuned against
+RouterBench. `.github/workflows/eval.yml` re-runs this weekly (and on
+demand) as a **regression gate**: it fails if the held-out numbers drift from
+the committed `eval/results.json` beyond a fixed tolerance
+(`eval.CheckDrift`) — it never commits a result back; a real drift is a
+human decision, not a bot's.
+
+See [`eval/RESULTS.md`](eval/RESULTS.md) for the actual numbers.
+
 ## The M0 spike (embedding router)
 
 The routing brain was prototyped separately first — see [`SPIKE.md`](SPIKE.md).
@@ -159,13 +193,16 @@ internal/observability/ Prometheus metrics + the router decision log
 internal/embed/         WordPiece tokenizer + in-process ONNX embedder (cgo-isolated)
 internal/router/        L1 heuristics + L2 nearest-centroid classifier + pipeline
 internal/reliability/   per-provider circuit breakers + the fallback-chain dispatcher
+eval/                   RouterBench loader, split, harness, RESULTS.md/chart/json generation
+cmd/eval/               the eval CLI (`make eval`)
+scripts/convert-routerbench.py  one-time pickle -> csv conversion (the only Python here)
 deploy/compose/         docker-compose demo (proxy + Prometheus + Grafana)
 deploy/grafana/         provisioned datasource + AutoRoute dashboard
 deploy/helm/autoroute/  Helm chart
 docs/ARCHITECTURE.md    full design
 ```
 
-Planned: `internal/shadow`, `eval/`.
+Planned: `internal/shadow`.
 
 ## Roadmap
 
@@ -174,8 +211,8 @@ Planned: `internal/shadow`, `eval/`.
 | M0 | `m0-spike` | ✅ in-process ONNX embedding + nearest-centroid router |
 | M1 | `m1-proxy-skeleton` | ✅ OpenAI-compatible proxy: forward, stream, health, metrics, Docker |
 | M2 | `m2-layered-router` | ✅ L1 heuristics + L2 embedding + confidence band; decision log; degrade-to-passthrough |
-| **M3** | `m3-reliability-observability` | **⬅ breakers, fallback chain, full metrics, Grafana, Helm** |
-| M4 | `m4-eval-harness` | RouterBench replay, published numbers, break-even |
+| M3 | `m3-reliability-observability` | ✅ breakers, fallback chain, full metrics, Grafana, Helm |
+| **M4** | `m4-eval-harness` | **⬅ RouterBench replay, published numbers, break-even** |
 | M5 | `m5-shadow-detector` | shadow sampling + quality-delta metric |
 | M6 | `m6-flagship-polish` | README, blog, demo |
 
