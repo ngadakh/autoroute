@@ -8,7 +8,10 @@
 // internal/router. The default build (CGO_ENABLED=0) runs L1-only; `make
 // build-router` (CGO_ENABLED=1, after `make setup`) adds L2. Since M3, every
 // upstream call goes through internal/reliability: a per-provider circuit
-// breaker, and for routed requests a fallback chain across tiers.
+// breaker, and for routed requests a fallback chain across tiers. Since M5,
+// a catalogue with a `shadow:` block (requires the router and L2 embedder to
+// be available) shadow-tests a sampled fraction of cheap-tier decisions
+// against the frontier model, off the critical path — see internal/shadow.
 package main
 
 import (
@@ -31,6 +34,7 @@ import (
 	"github.com/ngadakh/autoroute/internal/proxy"
 	"github.com/ngadakh/autoroute/internal/reliability"
 	"github.com/ngadakh/autoroute/internal/router"
+	"github.com/ngadakh/autoroute/internal/shadow"
 )
 
 // version is overridable at build time: -ldflags "-X main.version=v0.1.0".
@@ -89,7 +93,7 @@ func run(addr, cataloguePath, decisionLogPath string, grace time.Duration, logge
 	srv.Dispatcher = reliability.NewDispatcher(providers, breakers, metrics)
 
 	if cat.Router != nil && cat.Router.Enabled {
-		pipeline, tierModels := buildRouter(cat.Router, logger)
+		pipeline, tierModels, embedder := buildRouter(cat.Router, logger)
 		srv.Router = pipeline
 		srv.TierModels = tierModels
 		srv.TriggerModel = cat.Router.TriggerModel
@@ -102,6 +106,15 @@ func run(addr, cataloguePath, decisionLogPath string, grace time.Duration, logge
 			}
 			defer f.Close()
 			srv.DecisionLog = observability.NewDecisionLog(f)
+		}
+
+		if cat.Shadow != nil && cat.Shadow.Enabled {
+			if embedder == nil {
+				logger.Warn("shadow sampling enabled but no L2 embedder available, disabling shadow sampling")
+			} else {
+				srv.Shadow = &shadow.Sampler{Rate: cat.Shadow.SampleRate, Embedder: embedder}
+				srv.ShadowAlertThreshold = cat.Shadow.AlertThreshold
+			}
 		}
 	}
 
@@ -147,8 +160,10 @@ func run(addr, cataloguePath, decisionLogPath string, grace time.Duration, logge
 // buildRouter constructs the layered-router Pipeline from catalogue config.
 // The L2 embedding classifier may be unavailable (CGO_ENABLED=0 build, or
 // embedding.model_path/vocab_path unset) — that's logged, not fatal; the
-// pipeline still runs L1-only and degrades every L1 miss to DefaultTier.
-func buildRouter(rc *config.RouterConfig, logger *slog.Logger) (*router.Pipeline, map[router.Tier]string) {
+// pipeline still runs L1-only and degrades every L1 miss to DefaultTier. The
+// returned Embedder (nil if L2 is unavailable) is also what M5 shadow
+// sampling reuses — see run() — so the model loads once, not twice.
+func buildRouter(rc *config.RouterConfig, logger *slog.Logger) (*router.Pipeline, map[router.Tier]string, router.Embedder) {
 	tierModels := make(map[router.Tier]string, len(rc.Tiers))
 	for tier, model := range rc.Tiers {
 		tierModels[router.Tier(tier)] = model
@@ -160,7 +175,7 @@ func buildRouter(rc *config.RouterConfig, logger *slog.Logger) (*router.Pipeline
 	}
 
 	pipeline := router.NewPipeline(clf, embedder, rc.ThetaLow, rc.ThetaHigh, router.Tier(rc.DefaultTier))
-	return pipeline, tierModels
+	return pipeline, tierModels, embedder
 }
 
 // openDecisionLog opens the router decision log for append, creating its

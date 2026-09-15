@@ -1,11 +1,13 @@
 package proxy
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 
 	"github.com/ngadakh/autoroute/internal/config"
 	"github.com/ngadakh/autoroute/internal/openai"
+	"github.com/ngadakh/autoroute/internal/router"
 )
 
 // handleChatCompletions is the core relay. A request naming a catalogue model
@@ -13,7 +15,9 @@ import (
 // its provider's circuit breaker still applies — see internal/reliability).
 // A request naming s.TriggerModel (e.g. "auto") is routed to a tier (see
 // route.go) and dispatched against the M3 fallback chain: that tier, then
-// more capable tiers, then s.PassthroughDefault.
+// more capable tiers, then s.PassthroughDefault. Since M5, a sampled
+// fraction of non-streaming, cheap-tier-routed responses are also
+// shadow-tested against the frontier model — see shadow.go.
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBodyBytes))
 	if err != nil {
@@ -28,10 +32,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var candidates []config.Model
+	var tier router.Tier
 	resolvedName := req.Model
 	if s.Router != nil && req.Model == s.TriggerModel {
-		name, tier := s.route(req)
-		resolvedName = name
+		name, t := s.route(req)
+		resolvedName, tier = name, t
 		candidates = s.chainFor(tier)
 	} else {
 		model, ok := s.Catalogue.Lookup(req.Model)
@@ -57,6 +62,24 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	s.Logger.Info("forward",
 		"model", req.Model, "resolved", resolvedName, "used", used.Name, "upstream", used.Upstream,
 		"provider", used.Provider, "stream", req.Stream, "hops", len(candidates))
+
+	// Shadow sampling needs the answer text, which means buffering the whole
+	// body — only worth it for the rare (routed, cheap, non-streaming)
+	// request that's actually going to be sampled. Every other request keeps
+	// relay()'s plain streaming copy, untouched.
+	if s.Shadow != nil && tier == router.TierCheap && !req.Stream {
+		// io.ReadAll returns whatever it read even on error (e.g. a
+		// mid-stream connection drop) — reconstruct resp.Body from that
+		// regardless, so relay() below still forwards it; only skip the
+		// shadow sample itself if reading failed.
+		respBody, readErr := io.ReadAll(resp.Body)
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+		if readErr == nil {
+			if answer, ok := openai.Answer(respBody); ok {
+				s.maybeShadow(tier, body, answer)
+			}
+		}
+	}
 
 	relay(w, resp, req.Stream)
 }

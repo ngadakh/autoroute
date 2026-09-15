@@ -3,16 +3,13 @@
 An OpenAI-compatible LLM router that picks the cheapest model likely to answer a
 prompt well — built to run in production, not as a research demo.
 
-> **Status: M4 — eval harness.** [`eval/RESULTS.md`](eval/RESULTS.md) replays
-> RouterBench (36,497 real prompts, 11 models, real cost + correctness data)
-> through the actual router pipeline — re-runnable with `make eval-setup &&
-> make eval`, not a claimed number. Real held-out result: **2.5% cheaper than
-> always-frontier at 80.4% vs 81.4% accuracy** — but L1 heuristics decided
-> only 0.0% of rows and 95.6% landed in the conservative default, because the
-> M0-M2 route exemplars were authored for assistant chat, not academic-exam
-> benchmarks. That gap is the finding, reported honestly rather than hidden —
-> see `eval/RESULTS.md`'s "What this suggests". M0 de-risking spike:
-> [`SPIKE.md`](SPIKE.md).
+> **Status: M5 — shadow detector.** A sampled fraction of router-decided
+> cheap-tier responses are now replayed against the frontier model, off the
+> critical path, and scored for silent quality loss
+> (`autoroute_shadow_quality_delta`) — "the metric every commercial router
+> quietly fails" per [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). A
+> Prometheus alert fires if the rolling mean exceeds 0.15. M0 de-risking
+> spike: [`SPIKE.md`](SPIKE.md).
 
 ## Why
 
@@ -62,7 +59,7 @@ To use a real provider, uncomment the `openai` models in
 | `GET` | `/v1/models` | catalogue as an OpenAI model list |
 | `GET` | `/healthz` | liveness — always 200 while the process serves |
 | `GET` | `/readyz` | readiness — 503 before startup and during shutdown drain |
-| `GET` | `/metrics` | Prometheus (`autoroute_http_*`, `autoroute_upstream_*`, `autoroute_fallback_*`, `autoroute_circuit_breaker_*`) |
+| `GET` | `/metrics` | Prometheus (`autoroute_http_*`, `autoroute_upstream_*`, `autoroute_fallback_*`, `autoroute_circuit_breaker_*`, `autoroute_shadow_quality_delta`) |
 
 ### Other targets
 
@@ -171,6 +168,47 @@ human decision, not a bot's.
 
 See [`eval/RESULTS.md`](eval/RESULTS.md) for the actual numbers.
 
+## Shadow detector (M5)
+
+A worse-but-well-formed cheap-tier answer trips no error or latency alarm —
+`internal/shadow` is the only thing that catches it. `configs/catalogue.yaml`'s
+`shadow:` block turns it on:
+
+```yaml
+shadow:
+  enabled: true
+  sample_rate: 0.05     # fraction of eligible requests sampled
+  alert_threshold: 0.15 # logged warning above this; also the Prometheus rule's threshold
+```
+
+Eligible = a **router-decided cheap-tier, non-streaming** response (matching
+M3's precedent that routing-specific features apply only to `"auto"`-routed
+traffic, not direct-named requests; streaming is excluded because
+reconstructing full answer text from SSE deltas just to score it isn't worth
+the complexity — a non-streaming shadow test already exercises the identical
+router decision and model quality). For a sampled request: after the client
+already has its response, `internal/proxy/shadow.go` replays the same prompt
+against the frontier model in its own goroutine — never blocking or
+affecting the real response — and `internal/shadow.Sampler.Score` computes
+`1 - cosine(embed(cheapAnswer), embed(frontierAnswer))` using the same
+in-process ONNX embedder already loaded for L2 routing (no second model
+load, no judge model — the doc's prose mentions "embedding similarity +
+judge," but no L3 judge exists anywhere in this codebase yet; embedding
+similarity alone is what M5 ships).
+`autoroute_shadow_quality_delta` records every sample; a Prometheus rule
+(`deploy/compose/prometheus-alerts.yml`) fires `ShadowQualityDegraded` when
+its rolling 10-minute mean exceeds 0.15 for 5 minutes — visible in
+Prometheus's own `/alerts` UI. No Alertmanager is wired up; bring your own
+notification channel on top, same stance M3 already took on
+Ingress/HPA/ServiceMonitor.
+
+Because shadow sampling needs the L2 embedder, it's subject to the same "two
+build modes" split as routing itself: the default `make build`/`make docker`
+image is CGO-free, so shadow sampling — like L2 routing confidence — is
+silently disabled there (logged, not fatal) even with `shadow.enabled:
+true`. Run locally with `make run` after `make setup`, or `make
+build-router`, to see it fire for real.
+
 ## The M0 spike (embedding router)
 
 The routing brain was prototyped separately first — see [`SPIKE.md`](SPIKE.md).
@@ -193,16 +231,16 @@ internal/observability/ Prometheus metrics + the router decision log
 internal/embed/         WordPiece tokenizer + in-process ONNX embedder (cgo-isolated)
 internal/router/        L1 heuristics + L2 nearest-centroid classifier + pipeline
 internal/reliability/   per-provider circuit breakers + the fallback-chain dispatcher
+internal/shadow/        M5 shadow detector: sampling + embedding-similarity scoring
 eval/                   RouterBench loader, split, harness, RESULTS.md/chart/json generation
 cmd/eval/               the eval CLI (`make eval`)
 scripts/convert-routerbench.py  one-time pickle -> csv conversion (the only Python here)
 deploy/compose/         docker-compose demo (proxy + Prometheus + Grafana)
+deploy/compose/prometheus-alerts.yml  the M5 ShadowQualityDegraded alert rule
 deploy/grafana/         provisioned datasource + AutoRoute dashboard
 deploy/helm/autoroute/  Helm chart
 docs/ARCHITECTURE.md    full design
 ```
-
-Planned: `internal/shadow`.
 
 ## Roadmap
 
@@ -212,8 +250,8 @@ Planned: `internal/shadow`.
 | M1 | `m1-proxy-skeleton` | ✅ OpenAI-compatible proxy: forward, stream, health, metrics, Docker |
 | M2 | `m2-layered-router` | ✅ L1 heuristics + L2 embedding + confidence band; decision log; degrade-to-passthrough |
 | M3 | `m3-reliability-observability` | ✅ breakers, fallback chain, full metrics, Grafana, Helm |
-| **M4** | `m4-eval-harness` | **⬅ RouterBench replay, published numbers, break-even** |
-| M5 | `m5-shadow-detector` | shadow sampling + quality-delta metric |
+| M4 | `m4-eval-harness` | ✅ RouterBench replay, published numbers, break-even |
+| **M5** | `m5-shadow-detector` | **⬅ shadow sampling + quality-delta metric + alert** |
 | M6 | `m6-flagship-polish` | README, blog, demo |
 
 ## License

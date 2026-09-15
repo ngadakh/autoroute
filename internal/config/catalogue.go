@@ -44,6 +44,7 @@ type Catalogue struct {
 	Models      []Model              `yaml:"models"`
 	Router      *RouterConfig        `yaml:"router"`
 	Reliability *ReliabilityConfig   `yaml:"reliability"`
+	Shadow      *ShadowConfig        `yaml:"shadow"`
 
 	byModelName map[string]Model
 }
@@ -99,6 +100,50 @@ func (r *ReliabilityConfig) validate() error {
 		return fmt.Errorf("reliability.breaker_cooldown must be positive, got %q", r.BreakerCooldown)
 	}
 	r.cooldown = d
+	return nil
+}
+
+// ShadowConfig tunes the M5 shadow detector: replay a sampled fraction of
+// router-decided cheap-tier requests against the frontier model, off the
+// critical path, to catch a well-formed but silently worse cheap answer —
+// see docs/ARCHITECTURE.md's "silent-quality check". A nil Catalogue.Shadow
+// (key absent) means shadow sampling is off, same as enabled: false.
+type ShadowConfig struct {
+	Enabled        bool    `yaml:"enabled"`
+	SampleRate     float64 `yaml:"sample_rate"`     // (0,1], fraction of eligible requests sampled
+	AlertThreshold float64 `yaml:"alert_threshold"` // logged warning above this; also documents deploy/compose/prometheus-alerts.yml's threshold
+}
+
+const (
+	defaultShadowSampleRate     = 0.05
+	defaultShadowAlertThreshold = 0.15 // the exact figure from docs/ARCHITECTURE.md
+)
+
+func (s *ShadowConfig) validate(router *RouterConfig) error {
+	if !s.Enabled {
+		return nil
+	}
+	if router == nil || !router.Enabled {
+		return fmt.Errorf(`shadow.enabled requires router.enabled — shadow sampling only applies to routed ("auto") requests`)
+	}
+	if _, ok := router.Tiers["cheap"]; !ok {
+		return fmt.Errorf(`shadow sampling requires router.tiers["cheap"] to be configured`)
+	}
+	if _, ok := router.Tiers["frontier"]; !ok {
+		return fmt.Errorf(`shadow sampling requires router.tiers["frontier"] to be configured`)
+	}
+	if s.SampleRate <= 0 {
+		s.SampleRate = defaultShadowSampleRate
+	}
+	if s.SampleRate > 1 {
+		return fmt.Errorf("shadow.sample_rate must be in (0, 1], got %v", s.SampleRate)
+	}
+	if s.AlertThreshold <= 0 {
+		s.AlertThreshold = defaultShadowAlertThreshold
+	}
+	if s.AlertThreshold > 1 {
+		return fmt.Errorf("shadow.alert_threshold must be in (0, 1], got %v", s.AlertThreshold)
+	}
 	return nil
 }
 
@@ -173,6 +218,12 @@ func (c *Catalogue) finalise() error {
 	}
 	if err := c.Reliability.validate(); err != nil {
 		return err
+	}
+
+	if c.Shadow != nil {
+		if err := c.Shadow.validate(c.Router); err != nil {
+			return err
+		}
 	}
 	return nil
 }
