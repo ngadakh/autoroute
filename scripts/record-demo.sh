@@ -39,7 +39,7 @@ q() {
   echo
 }
 
-q "curl -s localhost:8080/v1/chat/completions -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Who is the prime minister of India?\"}]}' | jq '{model, answer: .choices[0].message.content}'"
+q "curl -s localhost:8080/v1/chat/completions -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"What is the capital of France?\"}]}' | jq '{model, answer: .choices[0].message.content}'"
 sleep 2
 
 q "curl -s localhost:8080/v1/chat/completions -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Add type hints to this function: def f(x): return x*2\"}]}' | jq '{model, answer: .choices[0].message.content}'"

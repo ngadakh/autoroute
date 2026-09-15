@@ -20,7 +20,7 @@ func TestL1ClassifyWorkedExamples(t *testing.T) {
 	}{
 		{
 			name:      "A factual-lookup",
-			req:       msg("Who is the prime minister of India?"),
+			req:       msg("What is the capital of France?"),
 			wantTier:  TierCheap,
 			wantFires: true,
 		},

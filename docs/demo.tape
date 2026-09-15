@@ -33,7 +33,7 @@ Type "clear"
 Enter
 Show
 
-Type `curl -s localhost:8080/v1/chat/completions -d '{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}' | jq '{model, answer: .choices[0].message.content}'`
+Type `curl -s localhost:8080/v1/chat/completions -d '{"model":"auto","messages":[{"role":"user","content":"What is the capital of France?"}]}' | jq '{model, answer: .choices[0].message.content}'`
 Enter
 Sleep 3s
 

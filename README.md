@@ -43,7 +43,7 @@ curl -N localhost:8080/v1/chat/completions -H 'content-type: application/json' \
 # routed: "auto" resolves to a tier via L1 heuristics (+ L2 embedding classifier
 # if this build has it — see "Two build modes" below), not a hardcoded name
 curl localhost:8080/v1/chat/completions -H 'content-type: application/json' \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Who is the prime minister of India?"}]}'
+  -d '{"model":"auto","messages":[{"role":"user","content":"What is the capital of France?"}]}'
 
 curl localhost:8080/healthz          # liveness
 curl localhost:8080/readyz           # readiness (503 while draining)

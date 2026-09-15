@@ -34,7 +34,7 @@ router:
   tiers: {cheap: fast, frontier: genius}
 `
 
-const shadowPrompt = "Who is the prime minister of India?"
+const shadowPrompt = "What is the capital of France?"
 
 // oneHot returns an embed.Dim-length vector with a single 1 at index i —
 // two different indices are orthogonal, giving Score() a delta of exactly 1.
