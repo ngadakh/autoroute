@@ -97,105 +97,83 @@ the reference version.
 
 ### The layered router
 
-`configs/catalogue.yaml`'s `router:` block turns on routing: a request naming
-`router.trigger_model` (default `auto`) is classified into a tier —
-`cheap`/`mid`/`frontier` — instead of naming a catalogue model directly.
-`router.tiers` maps each tier to a real catalogue model. Any other model name
-is unaffected — still direct M1-style passthrough.
+`configs/catalogue.yaml`'s `router:` block turns on routing: naming the
+trigger model (`auto` by default) gets a request classified into a tier —
+`cheap`/`mid`/`frontier` — instead of naming a model directly. Any other
+model name still passes straight through, unrouted.
 
-The pipeline is L1 heuristics (tokens, code fences, task verbs, turns, tools,
-JSON) first; a request it can decide with high certainty never touches an
-embedding call. A miss falls through to L2 — an in-process ONNX embedding
-classifier — whose confidence against the nearest route decides `theta_low`/
-`theta_high` bands: confident → that tier; uncertain → `router.default_tier`
-(the conservative default). Every decision is counted
-(`autoroute_route_decisions_total{tier,layer}`) and appended as a JSON line to
-the decision log (`-decision-log`, default `data/decisions.jsonl`).
+L1 heuristics (token count, code fences, task verbs, and more) decide with
+certainty when they can, skipping the embedding call entirely. A miss falls
+through to L2, an embedding classifier whose confidence against the nearest
+route decides the tier — or falls back to a conservative default when it
+isn't sure. Every decision is logged for later replay and eval.
 
 #### Two build modes
 
-L2 needs the ONNX Runtime CGo binding; L1 doesn't. So:
+L2 needs the ONNX Runtime CGo binding; L1 doesn't, so there are two build
+modes:
 
-- **`make build`** (default, `CGO_ENABLED=0`, what `make docker` uses) — no cgo
-  dependency at all. The router still runs: L1 heuristics, and every L1 miss
-  resolves straight to `default_tier` — a real instance of
-  degrade-to-passthrough, not a crippled mode.
-- **`make build-router`** (`CGO_ENABLED=1`, after `make setup` has fetched the
-  ONNX Runtime + model) — adds the real L2 embedding classifier.
+- **`make build`** (default, what `make docker` uses) — no cgo dependency;
+  L1-only, and every miss falls to the default tier rather than crashing.
+- **`make build-router`** (after `make setup`) — adds the real L2 embedding
+  classifier.
 
-`make run`/`make test` are always `CGO_ENABLED=1` and pick up L2 automatically
-once `make setup` has run, otherwise degrade the same way.
+`make run`/`make test` pick up L2 automatically once `make setup` has run,
+degrading the same way otherwise.
 
 ### Reliability & observability
 
-Every outgoing call — a direct-named request or a routed one — goes through
-`internal/reliability`: a circuit breaker per **provider** (not per tier), so
-several tiers sharing a provider account share its health state too. After
-`reliability.breaker_failure_threshold` (default 5) consecutive failures a
-provider is skipped fast for `reliability.breaker_cooldown` (default 30s)
-instead of hanging every request on a call likely to fail; a single probe
-after cooldown decides whether to close again.
+Every outgoing call goes through a circuit breaker per **provider** (not per
+tier), so several tiers sharing a provider account share its health state
+too. A run of consecutive failures trips it open — the provider is skipped
+fast instead of hanging every request — until a single probe after a
+cooldown decides whether to close again.
 
-A **routed** (`"auto"`) request additionally gets a fallback chain: on a
-transient failure (transport error, or 429/500/502/503/504) it climbs from its
-assigned tier toward more capable ones — `cheap → mid → frontier`, then
-`router.passthrough_default` as the final safety net — never back down to a
-cheaper tier. A **direct-named** request (M1-style) is still exactly one
-attempt: the chain is inherently tier-shaped, so naming a specific model gets
-you that model or an honest error, not a silent substitution — it does still
-benefit from the breaker's fail-fast behavior. Every hop is counted
-(`autoroute_fallback_total{from,to}`), and breaker state/trips are their own
-metrics (`autoroute_circuit_breaker_state`, `autoroute_circuit_breaker_trips_total`).
+A **routed** (`"auto"`) request also gets a fallback chain: on a transient
+failure it climbs from its assigned tier toward more capable ones, then a
+final passthrough safety net — never back down to something cheaper. A
+**direct-named** request stays exactly one attempt: naming a specific model
+gets you that model or an honest error, never a silent substitution.
 
-`make demo` now also brings up Grafana (`:3000`, admin/admin) with a
-pre-provisioned "AutoRoute" dashboard covering every metric from M1–M3
-(`deploy/grafana/`). `deploy/helm/autoroute/` is a minimal chart — Deployment,
-Service, ConfigMap for the catalogue, `/healthz`/`/readyz` probes, Prometheus
-scrape annotations:
+`make demo` brings up a pre-provisioned Grafana dashboard (`:3000`,
+admin/admin) alongside the proxy and Prometheus. `deploy/helm/autoroute/` is
+a minimal Helm chart — health probes and Prometheus scrape annotations, no
+Ingress/HPA/ServiceMonitor; bring your own if you need them:
 
 ```sh
 helm lint deploy/helm/autoroute
 helm install autoroute deploy/helm/autoroute
 ```
 
-No Ingress, HPA, PodDisruptionBudget, or ServiceMonitor CRD — bring your own
-if you need them; see `deploy/helm/autoroute/templates/NOTES.txt`.
-
 ### Eval harness
 
 `eval/` replays [RouterBench](https://huggingface.co/datasets/withmartian/routerbench)
-(36,497 real prompts across 86 benchmark categories — MMLU, HellaSwag, GSM8K,
-MT-Bench, Winogrande, ARC-Challenge and more; DOI `10.57967/hf/1996`) through
-the **exact same** `router.ExtractSignals` → `RouteL1` → `RouteL2` path
-`internal/proxy` drives in production (`eval/harness.go`) — not a
-reimplementation that could quietly drift from what actually ships.
-RouterBench already ran 11 real models against every prompt and recorded
-cost + correctness, so the harness needs no API keys: it looks a routed
-prompt's chosen model up in that table.
+— real prompts already scored for cost and correctness across 11 models —
+through the same router code the proxy runs in production, not a
+reimplementation that could quietly drift from what ships. No API keys
+needed: it looks a routed prompt's chosen model up in RouterBench's own
+table.
 
 ```sh
 make eval-setup   # fetch RouterBench (~100MB) + convert pickle -> csv (needs python3/pip)
 make eval         # replay it, write eval/RESULTS.md + eval/RESULTS_chart.svg + eval/results.json
 ```
 
-AutoRoute's three tiers map onto RouterBench's cheapest, a mid-cost, and the
-highest-quality model (picked by cost from the dataset itself — see
-`eval.Tiers` in `eval/harness.go`). Rows are split by benchmark category
-(`eval/split.go`): ~80% train, ~20% held out — deterministic, and honest by
-construction since nothing in `internal/router` was tuned against
-RouterBench. `.github/workflows/eval.yml` re-runs this weekly (and on
-demand) as a **regression gate**: it fails if the held-out numbers drift from
-the committed `eval/results.json` beyond a fixed tolerance
-(`eval.CheckDrift`) — it never commits a result back; a real drift is a
-human decision, not a bot's.
+Rows are split by benchmark category so nothing is tuned against its own
+eval set, and a weekly CI job re-runs the comparison as a regression gate
+against the committed baseline — a real drift is a human decision, never
+something a bot quietly absorbs.
 
 See [`eval/RESULTS.md`](eval/RESULTS.md) for the actual numbers.
 
 ### Shadow detector
 
 A worse-but-well-formed cheap-tier answer trips no error or latency alarm —
-`internal/shadow` is the only thing that catches it. `configs/catalogue.yaml`'s
-`shadow:` block turns it on:
+nothing else catches it. For a sampled fraction of cheap-tier, non-streaming
+responses: after the client already has its answer, replay the same prompt
+against the frontier model in the background and score how different the
+two are by embedding similarity — no second model load, no judge. A
+Prometheus rule alerts if the rolling mean delta climbs too high.
 
 ```yaml
 shadow:
@@ -204,70 +182,22 @@ shadow:
   alert_threshold: 0.15 # logged warning above this; also the Prometheus rule's threshold
 ```
 
-Eligible = a **router-decided cheap-tier, non-streaming** response (matching
-M3's precedent that routing-specific features apply only to `"auto"`-routed
-traffic, not direct-named requests; streaming is excluded because
-reconstructing full answer text from SSE deltas just to score it isn't worth
-the complexity — a non-streaming shadow test already exercises the identical
-router decision and model quality). For a sampled request: after the client
-already has its response, `internal/proxy/shadow.go` replays the same prompt
-against the frontier model in its own goroutine — never blocking or
-affecting the real response — and `internal/shadow.Sampler.Score` computes
-`1 - cosine(embed(cheapAnswer), embed(frontierAnswer))` using the same
-in-process ONNX embedder already loaded for L2 routing (no second model
-load, no judge model — the doc's prose mentions "embedding similarity +
-judge," but no L3 judge exists anywhere in this codebase yet; embedding
-similarity alone is what M5 ships).
-`autoroute_shadow_quality_delta` records every sample; a Prometheus rule
-(`deploy/compose/prometheus-alerts.yml`) fires `ShadowQualityDegraded` when
-its rolling 10-minute mean exceeds 0.15 for 5 minutes — visible in
-Prometheus's own `/alerts` UI. No Alertmanager is wired up; bring your own
-notification channel on top, same stance M3 already took on
-Ingress/HPA/ServiceMonitor.
-
-Because shadow sampling needs the L2 embedder, it's subject to the same "two
-build modes" split as routing itself: the default `make build`/`make docker`
-image is CGO-free, so shadow sampling — like L2 routing confidence — is
-silently disabled there (logged, not fatal) even with `shadow.enabled:
-true`. Run locally with `make run` after `make setup`, or `make
+Needs the same L2 embedder as routing, so like L2 confidence it's silently
+disabled (logged, not fatal) in the default CGO-free build even with
+`shadow.enabled: true`. Run `make run` after `make setup`, or `make
 build-router`, to see it fire for real.
 
 ## The embedding router spike
 
-The routing brain (in-process ONNX embedding + nearest-centroid
-classification over route exemplars) was prototyped separately first, before
-the proxy in `cmd/autoroute` existed, to de-risk it in isolation:
+The routing brain — an ONNX embedding model running inside the same binary
+as the proxy (no sidecar process, no embedding API call) plus
+nearest-centroid classification over route exemplars — was prototyped
+separately first, before `cmd/autoroute` existed, to de-risk it in
+isolation:
 
 ```sh
 make setup   # fetch ONNX Runtime + all-MiniLM-L6-v2 (~150 MB, into gitignored dirs)
 make spike   # embed the worked-example prompts, print routing decisions + latency
-```
-
-## Layout
-
-```
-cmd/autoroute/          the proxy
-cmd/spike-embed/        M0 embedding/routing spike
-internal/config/        model catalogue + router + reliability config
-internal/openai/        minimal chat-completions schema (peek + model rewrite)
-internal/provider/      upstream adapters — openai-compatible, mock
-internal/proxy/         HTTP edge: routes, relay, routing, dispatch, health, instrumentation
-internal/observability/ Prometheus metrics + the router decision log
-internal/embed/         WordPiece tokenizer + in-process ONNX embedder (cgo-isolated)
-internal/router/        L1 heuristics + L2 nearest-centroid classifier + pipeline
-internal/reliability/   per-provider circuit breakers + the fallback-chain dispatcher
-internal/shadow/        M5 shadow detector: sampling + embedding-similarity scoring
-eval/                   RouterBench loader, split, harness, RESULTS.md/chart/json generation
-cmd/eval/               the eval CLI (`make eval`)
-scripts/convert-routerbench.py  one-time pickle -> csv conversion (the only Python here)
-deploy/compose/         docker-compose demo (proxy + Prometheus + Grafana)
-deploy/compose/prometheus-alerts.yml  the M5 ShadowQualityDegraded alert rule
-deploy/grafana/         provisioned datasource + AutoRoute dashboard
-deploy/helm/autoroute/  Helm chart
-docs/ARCHITECTURE.md    full design
-docs/BLOG.md            build story + honest findings, M0-M5
-docs/demo.tape          vhs script -> docs/demo.gif
-scripts/record-demo.sh  asciinema+agg fallback for docs/demo.gif (see docs/demo.tape)
 ```
 
 ## License

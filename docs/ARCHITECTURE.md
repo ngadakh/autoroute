@@ -227,4 +227,5 @@ and [`BLOG.md`](BLOG.md) for the reasoning behind them.
 - **No retraining to add a model.** Tiers and domain→tier rules are config,
   Arch-Router-style.
 
-See [`../README.md`](../README.md#layout) for the repository layout.
+See the repository's own file tree for the layout — it's the one copy of
+this that can't go stale.
