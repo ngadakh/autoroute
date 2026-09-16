@@ -520,7 +520,7 @@
       <!-- A -->
       <article class="trace">
         <p class="trace-tag">Example A &middot; trivial factual lookup</p>
-        <p class="prompt">Who is the prime minister of India?</p>
+        <p class="prompt">What is the capital of France?</p>
         <div class="scroll">
           <svg class="d" viewBox="0 0 880 96" role="img"
                aria-label="Trace A: prompt to L1, decision at L1, path dips below L2 to the dispatcher, then to the cheap-tier model.">
@@ -540,7 +540,7 @@
         </div>
         <dl class="verdict">
           <div><dt>Decided at</dt><dd>L1 &mdash; heuristics</dd></div>
-          <div><dt>Signal</dt><dd>9 tokens &middot; no code &middot; single turn &middot; factual-lookup shape</dd></div>
+          <div><dt>Signal</dt><dd>6 words &middot; no code &middot; single turn &middot; factual-lookup shape</dd></div>
           <div><dt>Route</dt><dd><span class="tier cheap">cheap tier</span> Haiku-class</dd></div>
           <div><dt>Routing overhead</dt><dd>~0.3 ms &middot; $0 &middot; 0 extra model calls</dd></div>
         </dl>
@@ -647,7 +647,7 @@ Make this idiomatic and add type hints.</p>
       <!-- E -->
       <article class="trace">
         <p class="trace-tag">Example E &middot; the cheap provider fails</p>
-        <p class="prompt">Who is the prime minister of India?  &rarr;  routed cheap (as in A), but the cheap provider returns 503</p>
+        <p class="prompt">What is the capital of France?  &rarr;  routed cheap (as in A), but the cheap provider returns 503</p>
         <div class="scroll">
           <svg class="d" viewBox="0 0 880 150" role="img"
                aria-label="Trace E: routed to the cheap provider which returns 503; the circuit breaker records the failure; the dispatcher falls back to the mid model, which returns 200 to the client.">
