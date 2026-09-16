@@ -107,14 +107,47 @@
   .fig{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:20px;margin-top:8px}
   .fig .scroll{overflow-x:auto}
   .fig svg{display:block;height:auto;max-width:100%;min-width:560px}
+  .fig--wide svg{min-width:720px}
   figcaption{font-size:.86rem;color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  figcaption b{color:var(--ink);font-weight:600}
   .d text{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;fill:var(--ink)}
   .d .t-mut{fill:var(--muted)} .d .t-fnt{fill:var(--faint)} .d .t-acc{fill:var(--accent)}
+  .d .t-fro{fill:var(--frontier)} .d .t-dan{fill:var(--danger)}
   .d .s-line{stroke:var(--line-strong)} .d .s-mut{stroke:var(--muted)} .d .s-acc{stroke:var(--accent)}
+  .d .s-fro{stroke:var(--frontier)} .d .s-dan{stroke:var(--danger)}
   .d .f-surf{fill:var(--surface)} .d .f-s2{fill:var(--surface-2)} .d .f-acc-s{fill:var(--accent-soft)}
+  .d .f-fro-s{fill:var(--frontier-soft)} .d .f-dan-s{fill:var(--danger-soft)} .d .f-none{fill:none}
   .d .f-mut{fill:var(--muted)} .d .f-acc{fill:var(--accent)}
   .d .box{stroke-width:1.3} .d .lead{stroke-width:1.4} .d .path{stroke-width:2.6;fill:none;stroke-linecap:round}
-  .d .dash{stroke-dasharray:5 4}
+  .d .dash{stroke-dasharray:5 4} .d .thin{stroke-width:1}
+
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 24px;margin:22px 0 0;padding:0}
+  .legend div{border-left:2px solid var(--line-strong);padding:2px 0 2px 12px}
+  .legend dt{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--ink);font-weight:500;margin-bottom:1px}
+  .legend dd{margin:0;font-size:.84rem;color:var(--muted);overflow-wrap:anywhere}
+
+  .traces{display:flex;flex-direction:column;gap:16px;margin-top:18px}
+  .trace{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:18px 20px}
+  .trace-tag{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .trace .prompt{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:.8rem;line-height:1.5;color:var(--ink);
+    background:var(--surface-2);border:1px solid var(--line);border-radius:7px;
+    padding:9px 12px;margin:7px 0 14px;white-space:pre-wrap;overflow-x:auto;
+  }
+  .trace .scroll{overflow-x:auto}
+  .trace svg{display:block;height:auto;max-width:100%;min-width:520px}
+
+  .verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:9px 22px;margin:14px 0 0}
+  .verdict div{border-left:2px solid var(--accent);padding:1px 0 1px 10px}
+  .verdict dt{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:1px}
+  .verdict dd{margin:0;font-size:.85rem;color:var(--ink);overflow-wrap:anywhere}
+  .verdict.v-warn div{border-left-color:var(--frontier)}
+  .verdict.v-dan div{border-left-color:var(--danger)}
+
+  .tier{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:.78em;padding:1px 7px;border-radius:5px;border:1px solid}
+  .tier.cheap{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .tier.mid{color:var(--muted);border-color:var(--line-strong);background:var(--surface-2)}
+  .tier.frontier{color:var(--frontier);border-color:var(--frontier);background:var(--frontier-soft)}
 
   .callout{
     border:1px solid var(--line-strong);border-left:3px solid var(--accent);
@@ -202,12 +235,15 @@
       the nearest route decides the tier, or falls to the conservative default
       when unsure. Every outgoing call passes through a per-provider circuit
       breaker and a fallback chain that only ever climbs toward more capable
-      tiers, never down to something cheaper.
+      tiers, never down to something cheaper. Everything else — the embedding
+      model, the decision store, the shadow sampler — hangs off that same spine
+      and is observable.
     </p>
 
-    <figure class="fig">
+    <figure class="fig fig--wide">
       <div class="scroll">
-        <svg class="d" viewBox="0 10 900 210" role="img" aria-label="Request flow: client posts to the proxy; L1 heuristics decide with certainty or fall through to L2 embedding classifier; the router emits a tier to the dispatcher, which applies a circuit breaker and fallback chain before routing to the cheap, mid, or frontier tier; every hop is logged to the decision store and exposed as Prometheus metrics.">
+        <svg class="d" viewBox="0 0 970 384" role="img"
+             aria-label="AutoRoute system architecture: client posts to the Go service; ingest hands to a two-layer router pipeline (L1 rules, L2 embedding) then to the dispatcher, which routes to cheap, mid or frontier providers. Supporting components: model catalogue, in-process ONNX embedding, decision store, shadow sampler, and an observability strip.">
           <defs>
             <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0 0 L10 5 L0 10 z" class="f-mut"/>
@@ -217,60 +253,346 @@
             </marker>
           </defs>
 
-          <rect x="10" y="86" width="90" height="46" rx="7" class="f-s2 s-line box"/>
-          <text x="55" y="106" font-size="11" text-anchor="middle">client</text>
-          <text x="55" y="120" font-size="9" text-anchor="middle" class="t-fnt">app / SDK</text>
-          <line x1="100" y1="109" x2="140" y2="109" class="s-mut lead" marker-end="url(#ar)"/>
+          <rect x="150" y="26" width="640" height="344" rx="12" class="f-surf s-line box"/>
+          <text x="164" y="18" font-size="11" class="t-mut">autoroute &mdash; Go service</text>
 
-          <rect x="140" y="30" width="230" height="160" rx="10" class="f-s2 s-line box"/>
-          <text x="152" y="20" font-size="10.5" class="t-mut">router pipeline</text>
-          <rect x="160" y="48" width="190" height="52" rx="7" class="f-surf s-line box"/>
-          <text x="255" y="70" font-size="11" text-anchor="middle">L1 — heuristics</text>
-          <text x="255" y="86" font-size="8.5" text-anchor="middle" class="t-fnt">tokens · code · verbs · tools</text>
-          <line x1="255" y1="100" x2="255" y2="120" class="s-mut lead" marker-end="url(#ar)"/>
-          <text x="267" y="112" font-size="8.5" class="t-fnt">no</text>
-          <rect x="160" y="128" width="190" height="52" rx="7" class="f-surf s-line box"/>
-          <text x="255" y="150" font-size="11" text-anchor="middle">L2 — embedding</text>
-          <text x="255" y="166" font-size="8.5" text-anchor="middle" class="t-fnt">in-process ONNX · confidence bands</text>
+          <rect x="20" y="120" width="100" height="46" rx="7" class="f-s2 s-line box"/>
+          <text x="70" y="141" font-size="12" text-anchor="middle">client</text>
+          <text x="70" y="156" font-size="9.5" text-anchor="middle" class="t-fnt">app / SDK</text>
+          <line x1="120" y1="143" x2="164" y2="143" class="s-mut lead" marker-end="url(#ar)"/>
+          <text x="142" y="135" font-size="9" text-anchor="middle" class="t-fnt">HTTP</text>
 
-          <line x1="370" y1="110" x2="410" y2="110" class="s-acc path" marker-end="url(#ar-acc)"/>
-          <text x="390" y="102" font-size="8.5" text-anchor="middle" class="t-acc">tier</text>
+          <rect x="366" y="40" width="104" height="50" rx="7" class="f-surf s-line box"/>
+          <text x="418" y="61" font-size="11" text-anchor="middle">embedding</text>
+          <text x="418" y="76" font-size="9" text-anchor="middle" class="t-fnt">ONNX &middot; in-process</text>
+          <line x1="418" y1="90" x2="450" y2="128" class="s-mut lead" marker-end="url(#ar)"/>
+          <text x="404" y="112" font-size="9" class="t-fnt">cosine sim</text>
 
-          <rect x="410" y="70" width="150" height="80" rx="9" class="f-surf s-line box"/>
-          <text x="485" y="98" font-size="11" text-anchor="middle">dispatch</text>
-          <text x="485" y="114" font-size="8.5" text-anchor="middle" class="t-fnt">circuit breaker</text>
-          <text x="485" y="128" font-size="8.5" text-anchor="middle" class="t-fnt">fallback chain</text>
+          <rect x="168" y="118" width="112" height="58" rx="7" class="f-surf s-line box"/>
+          <text x="224" y="142" font-size="11" text-anchor="middle">ingest</text>
+          <text x="224" y="157" font-size="9" text-anchor="middle" class="t-fnt">schema &middot; auth</text>
 
-          <line x1="560" y1="90" x2="600" y2="55" class="s-acc path" marker-end="url(#ar-acc)"/>
-          <line x1="560" y1="110" x2="600" y2="110" class="s-acc path" marker-end="url(#ar-acc)"/>
-          <line x1="560" y1="130" x2="600" y2="165" class="s-acc path" marker-end="url(#ar-acc)"/>
+          <rect x="296" y="104" width="244" height="86" rx="8" class="f-s2 s-line box"/>
+          <text x="304" y="119" font-size="9.5" class="t-mut">router pipeline</text>
+          <rect x="306" y="128" width="108" height="42" rx="6" class="f-surf s-line box"/>
+          <text x="360" y="147" font-size="10.5" text-anchor="middle">L1</text>
+          <text x="360" y="161" font-size="8.5" text-anchor="middle" class="t-fnt">rules</text>
+          <rect x="422" y="128" width="108" height="42" rx="6" class="f-surf s-line box"/>
+          <text x="476" y="147" font-size="10.5" text-anchor="middle">L2</text>
+          <text x="476" y="161" font-size="8.5" text-anchor="middle" class="t-fnt">embed</text>
+          <line x1="414" y1="149" x2="422" y2="149" class="s-mut thin" marker-end="url(#ar)"/>
+          <line x1="280" y1="147" x2="296" y2="147" class="s-mut lead" marker-end="url(#ar)"/>
 
-          <rect x="600" y="32" width="120" height="42" rx="7" class="f-acc-s s-acc box"/>
-          <text x="660" y="49" font-size="10.5" text-anchor="middle" class="t-acc">cheap</text>
-          <text x="660" y="62" font-size="8" text-anchor="middle" class="t-acc">Haiku-class</text>
+          <rect x="560" y="118" width="156" height="58" rx="7" class="f-surf s-line box"/>
+          <text x="638" y="140" font-size="11" text-anchor="middle">dispatch</text>
+          <text x="638" y="155" font-size="8.5" text-anchor="middle" class="t-fnt">breaker &middot; fallback &middot; retry</text>
+          <line x1="540" y1="147" x2="560" y2="147" class="s-acc path" marker-end="url(#ar-acc)"/>
+          <text x="550" y="139" font-size="8.5" text-anchor="middle" class="t-acc">tier</text>
 
-          <rect x="600" y="90" width="120" height="42" rx="7" class="f-surf s-line box"/>
-          <text x="660" y="107" font-size="10.5" text-anchor="middle">mid</text>
-          <text x="660" y="120" font-size="8" text-anchor="middle" class="t-fnt">Sonnet-class</text>
+          <rect x="168" y="228" width="120" height="62" rx="7" class="f-surf s-line box"/>
+          <text x="228" y="250" font-size="10.5" text-anchor="middle">catalogue</text>
+          <text x="228" y="264" font-size="8.5" text-anchor="middle" class="t-fnt">price &middot; p50/p95</text>
+          <text x="228" y="276" font-size="8.5" text-anchor="middle" class="t-fnt">tier rules</text>
+          <path d="M244 228 L244 206 L300 206 L300 190" class="f-none s-mut lead" marker-end="url(#ar)"/>
+          <path d="M262 228 L262 200 L600 200 L600 176" class="f-none s-mut lead" marker-end="url(#ar)"/>
+          <text x="418" y="210" font-size="8.5" text-anchor="middle" class="t-fnt">prices &middot; SLOs</text>
 
-          <rect x="600" y="146" width="120" height="42" rx="7" class="f-surf s-line box"/>
-          <text x="660" y="163" font-size="10.5" text-anchor="middle">frontier</text>
-          <text x="660" y="176" font-size="8" text-anchor="middle" class="t-fnt">Opus-class</text>
+          <rect x="376" y="228" width="132" height="46" rx="7" class="f-surf s-line box"/>
+          <text x="442" y="248" font-size="10.5" text-anchor="middle">decision store</text>
+          <text x="442" y="262" font-size="8" text-anchor="middle" class="t-fnt">model&middot;tier&middot;conf&middot;reason</text>
+          <line x1="442" y1="190" x2="442" y2="228" class="s-mut lead" marker-end="url(#ar)"/>
+          <text x="450" y="218" font-size="8.5" class="t-fnt">append</text>
 
-          <text x="750" y="45" font-size="9" class="t-fnt">200 OK</text>
-          <line x1="720" y1="53" x2="820" y2="53" class="s-mut lead dash" marker-end="url(#ar)"/>
-          <text x="850" y="58" font-size="9.5" text-anchor="middle" class="t-mut">client</text>
+          <rect x="596" y="228" width="120" height="46" rx="7" class="f-surf s-line box"/>
+          <text x="656" y="248" font-size="10.5" text-anchor="middle">shadow sampler</text>
+          <text x="656" y="262" font-size="8" text-anchor="middle" class="t-fnt">N% of cheap routes</text>
+          <line x1="656" y1="176" x2="656" y2="228" class="s-mut lead" marker-end="url(#ar)"/>
+
+          <rect x="168" y="300" width="548" height="34" rx="7" class="f-none s-line box dash"/>
+          <text x="182" y="321" font-size="9.5" class="t-mut">/healthz &middot; /readyz</text>
+          <text x="442" y="321" font-size="9.5" text-anchor="middle" class="t-mut">/metrics &mdash; Prometheus</text>
+          <text x="702" y="321" font-size="9.5" text-anchor="end" class="t-mut">OpenTelemetry spans</text>
+          <line x1="442" y1="274" x2="442" y2="300" class="s-line thin dash"/>
+          <line x1="656" y1="274" x2="656" y2="300" class="s-line thin dash"/>
+
+          <rect x="812" y="104" width="126" height="44" rx="7" class="f-acc-s s-acc box"/>
+          <text x="875" y="123" font-size="10.5" text-anchor="middle" class="t-acc">cheap tier</text>
+          <text x="875" y="137" font-size="8.5" text-anchor="middle" class="t-acc">Haiku-class</text>
+
+          <rect x="812" y="160" width="126" height="44" rx="7" class="f-surf s-line box"/>
+          <text x="875" y="179" font-size="10.5" text-anchor="middle">mid tier</text>
+          <text x="875" y="193" font-size="8.5" text-anchor="middle" class="t-fnt">Sonnet-class</text>
+
+          <rect x="812" y="216" width="126" height="44" rx="7" class="f-fro-s s-fro box"/>
+          <text x="875" y="235" font-size="10.5" text-anchor="middle" class="t-fro">frontier tier</text>
+          <text x="875" y="249" font-size="8.5" text-anchor="middle" class="t-fro">Opus / GPT-5-class</text>
+
+          <path d="M716 138 L812 126" class="s-acc path" marker-end="url(#ar-acc)"/>
+          <text x="762" y="122" font-size="8.5" class="t-fnt">&asymp;70%</text>
+          <path d="M716 147 L812 182" class="s-mut lead" marker-end="url(#ar)"/>
+          <text x="760" y="171" font-size="8.5" class="t-fnt">&asymp;22%</text>
+          <path d="M716 156 L812 238" class="s-mut lead" marker-end="url(#ar)"/>
+          <text x="740" y="210" font-size="8.5" class="t-fnt">&asymp;8%</text>
+
+          <path d="M716 250 L760 250 L760 252 L812 252" class="f-none s-mut lead dash" marker-end="url(#ar)"/>
+          <text x="748" y="270" font-size="8.5" class="t-fnt">async &middot; off critical path</text>
+
+          <text x="962" y="360" font-size="8.5" text-anchor="end" class="t-fnt">arrow widths &amp; shares are illustrative</text>
         </svg>
       </div>
       <figcaption>
-        Every decision is appended to a decision log and counted as
-        <code>autoroute_route_decisions_total{tier,layer}</code>. Full diagrams,
-        worked examples and failure-mode traces (a provider 503, the
-        shadow-quality check) are in the
-        <a href="https://github.com/ngadakh/autoroute/blob/main/docs/ARCHITECTURE.md">architecture doc</a>
-        and its <a href="architecture.html">rendered version</a>.
+        <b>One spine, everything else hangs off it.</b> The embedding model runs
+        <b>in the process</b> — no embedding API call — which is what keeps
+        RouteLLM and vLLM Semantic Router off the fast path. The dispatcher is
+        where provider failures are absorbed; the router never talks to a
+        provider directly. Every decision is appended to the decision store and
+        counted as <code>autoroute_route_decisions_total{tier,layer}</code>.
       </figcaption>
     </figure>
+
+    <dl class="legend">
+      <div><dt>ingest</dt><dd>Parse the OpenAI request, auth, normalise. Pull the last user turn + context signals.</dd></div>
+      <div><dt>router pipeline</dt><dd>L1 rules → L2 embedding classifier with confidence bands. Emits a <span class="mono">RouteDecision</span>.</dd></div>
+      <div><dt>catalogue</dt><dd>Config: model list, live prices, measured p50/p95 latency, and the domain→tier rules.</dd></div>
+      <div><dt>decision store</dt><dd>Append-only log of every decision + features, for eval replay and debugging.</dd></div>
+      <div><dt>shadow sampler</dt><dd>Replays N% of cheap-routed prompts against the frontier model, off the critical path, to catch silent quality loss.</dd></div>
+      <div><dt>dispatch</dt><dd>Per-provider circuit breaker, fallback chain, retry budget, and degrade-to-passthrough.</dd></div>
+      <div><dt>observability</dt><dd>Kubernetes probes, Prometheus metrics, OpenTelemetry traces — every component reports here.</dd></div>
+    </dl>
+
+    <p class="col" style="margin-top:18px;font-size:.88rem;color:var(--muted)">
+      Full diagrams, all six worked examples below, and failure-mode traces (a
+      provider 503, the shadow-quality check) are also in the
+      <a href="https://github.com/ngadakh/autoroute/blob/main/docs/ARCHITECTURE.md">architecture doc</a>
+      and its <a href="architecture.html">rendered version</a>.
+    </p>
+  </section>
+
+  <section class="band">
+    <div class="sec-head">
+      <p class="eyebrow">Worked examples</p>
+      <h2>Same pipeline every time — six real prompts, traced</h2>
+    </div>
+    <p class="col" style="color:var(--muted)">
+      The <span style="color:var(--accent)">accent path</span> shows what
+      actually ran for each prompt. A dip under a station means the request
+      bypassed it.
+    </p>
+
+    <div class="traces">
+
+      <article class="trace">
+        <p class="trace-tag">Example A · trivial factual lookup</p>
+        <p class="prompt">What is the capital of France?</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace A: prompt to L1, decision at L1, path dips below L2 to the dispatcher, then to the cheap-tier model.">
+            <defs><marker id="tA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L270 52 C310 52 310 70 350 70 L610 70 C650 70 650 52 700 52 L740 52" class="s-acc path" marker-end="url(#tA)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="6" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">heuristics</text>
+              <circle cx="480" cy="70" r="4" class="f-none s-mut thin"/><text x="480" y="34" class="t-fnt">L2</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-acc-s s-acc box"/>
+            <text x="820" y="56" font-size="10" text-anchor="middle" class="t-acc">cheap model</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tA)"/>
+          </svg>
+        </div>
+        <dl class="verdict">
+          <div><dt>Decided at</dt><dd>L1 — heuristics</dd></div>
+          <div><dt>Signal</dt><dd>6 words · no code · single turn · factual-lookup shape</dd></div>
+          <div><dt>Route</dt><dd><span class="tier cheap">cheap tier</span> Haiku-class</dd></div>
+          <div><dt>Routing overhead</dt><dd>~0.3 ms · $0 · 0 extra model calls</dd></div>
+        </dl>
+      </article>
+
+      <article class="trace">
+        <p class="trace-tag">Example B · formal reasoning</p>
+        <p class="prompt">Prove that the sum of the first n odd numbers equals n².</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace B: prompt through L1 and L2; decision at L2 with confidence 0.91; straight through to the dispatcher, then to the frontier-tier model.">
+            <defs><marker id="tB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L740 52" class="s-acc path" marker-end="url(#tB)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="5" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">inconclusive</text>
+              <circle cx="480" cy="52" r="6" class="f-acc"/><text x="480" y="34" class="t-acc">L2</text><text x="480" y="88" font-size="8.5" class="t-fnt">conf 0.91</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-fro-s s-fro box"/>
+            <text x="820" y="56" font-size="10" text-anchor="middle" class="t-fro">frontier model</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tB)"/>
+          </svg>
+        </div>
+        <dl class="verdict v-warn">
+          <div><dt>Decided at</dt><dd>L2 — embedding classifier</dd></div>
+          <div><dt>Signal</dt><dd>nearest cluster "formal-math / proof" · difficulty 0.88 · confidence 0.91</dd></div>
+          <div><dt>Route</dt><dd><span class="tier frontier">frontier tier</span> Opus / GPT-5-class</dd></div>
+          <div><dt>Routing overhead</dt><dd>~12 ms · ≈$0 (embedding is in-process) · 0 extra model calls</dd></div>
+        </dl>
+      </article>
+
+      <article class="trace">
+        <p class="trace-tag">Example C · scoped code edit</p>
+        <p class="prompt">```py
+def f(x): return [i for i in x if i % 2 == 0]
+```
+Make this idiomatic and add type hints.</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace C: prompt to L1, decision at L1 on the code-fence signal, path dips below L2 to the dispatcher, then to the mid-tier code-specialised model.">
+            <defs><marker id="tC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L270 52 C310 52 310 70 350 70 L610 70 C650 70 650 52 700 52 L740 52" class="s-acc path" marker-end="url(#tC)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="6" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">code fence + edit verb</text>
+              <circle cx="480" cy="70" r="4" class="f-none s-mut thin"/><text x="480" y="34" class="t-fnt">L2</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-surf s-line box"/>
+            <text x="820" y="52" font-size="10" text-anchor="middle">mid model</text>
+            <text x="820" y="63" font-size="8" text-anchor="middle" class="t-fnt">code-specialised</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tC)"/>
+          </svg>
+        </div>
+        <dl class="verdict">
+          <div><dt>Decided at</dt><dd>L1 — heuristics</dd></div>
+          <div><dt>Signal</dt><dd>fenced code block · imperative edit verb · 34 tokens · bounded scope</dd></div>
+          <div><dt>Route</dt><dd><span class="tier mid">mid tier</span> code-specialised model</dd></div>
+          <div><dt>Routing overhead</dt><dd>~0.4 ms · $0 · 0 extra model calls</dd></div>
+        </dl>
+      </article>
+
+      <article class="trace">
+        <p class="trace-tag">Example D · genuinely ambiguous — low confidence, conservative default</p>
+        <p class="prompt">Here's my plan for a B2B pricing change — switching from seats to usage. Is this a good idea?</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace D: prompt through L1 and L2; L2 confidence 0.58 is below theta-low; the router takes the conservative default tier straight to the dispatcher, then to the frontier-tier model.">
+            <defs><marker id="tD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L740 52" class="s-acc path" marker-end="url(#tD)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="5" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">inconclusive</text>
+              <circle cx="480" cy="52" r="6" class="f-acc"/><text x="480" y="34" class="t-acc">L2</text><text x="480" y="88" font-size="8.5" class="t-fnt">conf 0.58 &lt; &theta;_low 0.75</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-fro-s s-fro box"/>
+            <text x="820" y="56" font-size="10" text-anchor="middle" class="t-fro">frontier model</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tD)"/>
+          </svg>
+        </div>
+        <dl class="verdict v-warn">
+          <div><dt>Decided at</dt><dd>L2 — embedding classifier, low-confidence band</dd></div>
+          <div><dt>Signal</dt><dd>open-ended judgement · real stakes · L2 torn between "business-advice" and "casual-opinion" clusters · confidence 0.58 &lt; θ_low</dd></div>
+          <div><dt>Route</dt><dd><span class="tier frontier">frontier tier</span> — conservative default, no judge to arbitrate</dd></div>
+          <div><dt>Routing overhead</dt><dd>~12 ms · ≈$0 (embedding is in-process) · 0 extra model calls</dd></div>
+        </dl>
+        <figcaption>
+          Same outcome as B here, but for a different reason: B's confidence (0.91) was high
+          enough to trust L2's own pick; D's (0.58) is too low to trust, so the router takes the
+          safe default instead. Either way it lands on <span class="mono">frontier</span>, but the
+          decision log tells them apart (<span class="mono">L2</span> vs
+          <span class="mono">degraded-low-confidence</span>).
+        </figcaption>
+      </article>
+
+      <article class="trace">
+        <p class="trace-tag">Example E · the cheap provider fails</p>
+        <p class="prompt">What is the capital of France?  →  routed cheap (as in A), but the cheap provider returns 503</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 150" role="img"
+               aria-label="Trace E: routed to the cheap provider which returns 503; the circuit breaker records the failure; the dispatcher falls back to the mid model, which returns 200 to the client.">
+            <defs>
+              <marker id="tE-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker>
+              <marker id="tE-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-dan"/></marker>
+            </defs>
+            <line x1="60" y1="46" x2="470" y2="46" class="s-line thin dash"/>
+            <path d="M60 46 L250 46 C300 46 300 60 340 60 L470 60" class="s-acc path" marker-end="url(#tE-a)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="46" r="4" class="f-acc"/><text x="60" y="30" class="t-mut">PROMPT</text>
+              <circle cx="250" cy="46" r="6" class="f-acc"/><text x="250" y="30" class="t-acc">L1</text>
+              <circle cx="470" cy="60" r="4" class="f-acc"/><text x="470" y="30" class="t-mut">DISPATCH</text>
+            </g>
+
+            <path d="M492 58 L560 40" class="s-dan path" marker-end="url(#tE-d)"/>
+            <rect x="566" y="22" width="150" height="34" rx="6" class="f-dan-s s-dan box"/>
+            <text x="641" y="38" font-size="10" text-anchor="middle" class="t-dan">cheap provider</text>
+            <text x="641" y="50" font-size="8.5" text-anchor="middle" class="t-dan">503 · timeout</text>
+
+            <path d="M641 56 L641 74" class="s-mut thin dash"/>
+            <text x="641" y="88" font-size="8.5" text-anchor="middle" class="t-fnt">breaker records failure</text>
+
+            <path d="M512 66 C540 108 560 118 588 118" class="s-acc path" marker-end="url(#tE-a)"/>
+            <text x="486" y="108" font-size="8.5" class="t-acc">fallback</text>
+            <rect x="592" y="100" width="150" height="34" rx="6" class="f-surf s-line box"/>
+            <text x="667" y="116" font-size="10" text-anchor="middle">mid provider</text>
+            <text x="667" y="128" font-size="8.5" text-anchor="middle" class="t-fnt">200 OK</text>
+
+            <path d="M742 117 L800 117" class="s-acc path" marker-end="url(#tE-a)"/>
+            <text x="828" y="120" font-size="10" text-anchor="middle" class="t-acc">client</text>
+          </svg>
+        </div>
+        <dl class="verdict v-dan">
+          <div><dt>What the client sees</dt><dd>One <span class="mono">200</span> · +40 ms · no error</dd></div>
+          <div><dt>Breaker</dt><dd>Opens after the failure threshold; half-opens to probe after 30 s</dd></div>
+          <div><dt>Metric</dt><dd class="mono">autoroute_fallback_total{from="cheap",to="mid"} +1</dd></div>
+          <div><dt>If all tiers fail</dt><dd>Degrade to passthrough → configured default model, metric emitted, never a hard 5xx</dd></div>
+        </dl>
+      </article>
+
+      <article class="trace">
+        <p class="trace-tag">Example F · silent-quality check (asynchronous)</p>
+        <p class="prompt">Request A already returned from the cheap model. 1 in N cheap-routed prompts is shadow-sampled.</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 150" role="img"
+               aria-label="Trace F: after the cheap response is served to the client, the shadow sampler asynchronously replays the prompt to the frontier model, scores both responses, and records a quality delta.">
+            <defs><marker id="tF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-mut"/></marker></defs>
+
+            <rect x="40" y="30" width="150" height="34" rx="6" class="f-acc-s s-acc box"/>
+            <text x="115" y="46" font-size="10" text-anchor="middle" class="t-acc">cheap response</text>
+            <text x="115" y="58" font-size="8.5" text-anchor="middle" class="t-acc">served to client</text>
+
+            <path d="M190 47 L250 47" class="s-acc path" marker-end="url(#tF)"/>
+            <text x="220" y="38" font-size="8.5" text-anchor="middle" class="t-fnt">done</text>
+
+            <rect x="252" y="30" width="150" height="34" rx="6" class="f-surf s-line box"/>
+            <text x="327" y="50" font-size="10" text-anchor="middle">shadow sampler</text>
+
+            <path d="M327 64 L327 96" class="f-none s-mut lead dash" marker-end="url(#tF)"/>
+            <text x="337" y="84" font-size="8.5" class="t-fnt">replay prompt · async</text>
+
+            <rect x="252" y="98" width="150" height="34" rx="6" class="f-fro-s s-fro box"/>
+            <text x="327" y="114" font-size="10" text-anchor="middle" class="t-fro">frontier model</text>
+            <text x="327" y="126" font-size="8.5" text-anchor="middle" class="t-fro">reference answer</text>
+
+            <path d="M402 115 C460 115 460 47 512 47" class="f-none s-mut lead" marker-end="url(#tF)"/>
+            <rect x="514" y="30" width="150" height="34" rx="6" class="f-surf s-line box"/>
+            <text x="589" y="46" font-size="10" text-anchor="middle">score both</text>
+            <text x="589" y="58" font-size="8.5" text-anchor="middle" class="t-fnt">embedding similarity</text>
+
+            <path d="M664 47 L724 47" class="s-mut lead" marker-end="url(#tF)"/>
+            <rect x="726" y="30" width="140" height="34" rx="6" class="f-s2 s-line box"/>
+            <text x="796" y="46" font-size="9.5" text-anchor="middle">quality delta</text>
+            <text x="796" y="58" font-size="8.5" text-anchor="middle" class="t-fnt">+0.02 · logged</text>
+          </svg>
+        </div>
+        <dl class="verdict">
+          <div><dt>Cost model</dt><dd>Borne on N% of cheap traffic, entirely off the critical path</dd></div>
+          <div><dt>Metric</dt><dd class="mono">autoroute_shadow_quality_delta</dd></div>
+          <div><dt>Alert</dt><dd>Rolling mean delta &gt; 0.15 → the cheap route is quietly underperforming; page on-call</dd></div>
+          <div><dt>Why it matters</dt><dd>A worse-but-well-formed answer trips no error or latency alarm — this is the only thing that catches it</dd></div>
+        </dl>
+      </article>
+
+    </div>
   </section>
 
   <section class="band">
