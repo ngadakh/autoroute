@@ -187,19 +187,34 @@ whether the deployed router is behaving like the eval said it would.
 |---|---|---|
 | `autoroute_route_decisions_total{tier,layer}` | counter | Where is traffic going, and which layer decided? |
 | `autoroute_decision_latency_seconds` | histogram | What is the router adding to p50 / p95? |
-| `autoroute_cheap_model_recall` | gauge | Of prompts a cheap model could have handled, what share did we route cheap? *(the metric every commercial router quietly fails — see RouterArena)* |
+| `autoroute_router_degraded_total` | counter | How often did the router miss a confident pick and fall back to the default tier? |
 | `autoroute_fallback_total{from,to}` | counter | How often is a provider failing us? |
+| `autoroute_circuit_breaker_state` / `_trips_total` | gauge / counter | Is a provider's breaker open right now, and how often has it tripped? |
 | `autoroute_shadow_quality_delta` | histogram | Are cheap routes silently worse? |
-| `autoroute_cost_usd_total` vs `autoroute_baseline_usd_total` | counter | Actual spend vs always-frontier — the real saving, measured. |
+
+Cheap-model recall and cost-vs-baseline savings aren't live Prometheus
+metrics — they need RouterBench's ground truth to compute, which the running
+proxy doesn't have. They're the eval harness's job instead: `eval/RESULTS.md`
+publishes both, and `.github/workflows/eval.yml` re-checks them weekly
+against the committed baseline.
 
 ### Honest break-even
 
-Routing is a cost you add hoping to remove a bigger one. Embedding-only routing
-(~15 ms, ≈ $0) clears that bar almost always. The saving is the model price
-gap avoided — frontier ≈ $15 / M output vs cheap ≈ $0.25 / M — which only
-matters if a real fraction of traffic is genuinely routable. The harness
-reports that fraction for the benchmark; production mileage is your own
-traffic.
+Routing is a cost you add hoping to remove a bigger one. Embedding-only
+routing (~15 ms, ≈ $0) clears that bar almost always. The saving is the model
+price gap avoided — frontier ≈ $15 / M output vs cheap ≈ $0.25 / M — which
+only matters if a real fraction of traffic is genuinely routable.
+
+On RouterBench's held-out split (4,436 rows the thresholds were never tuned
+against), the measured answer is **2.5% cheaper than always calling the
+frontier model, at 80.4% accuracy versus 81.4%** — a real but modest win, not
+a dramatic one. RouterBench is academic-exam-style prompts (MMLU, GSM8K,
+Winogrande); the L1 rules and L2 exemplars were authored for general
+assistant chat, so they don't confidently discriminate this benchmark's
+traffic — **95.6% of held-out rows land in the conservative default** rather
+than a confident L2 pick, and the router pays the frontier price rather than
+guess. See [`../eval/RESULTS.md`](../eval/RESULTS.md) for the full numbers
+and [`BLOG.md`](BLOG.md) for the reasoning behind them.
 
 ## Deliberately out of scope
 

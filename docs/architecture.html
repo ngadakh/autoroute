@@ -812,22 +812,38 @@ Make this idiomatic and add type hints.</p>
         <tbody>
           <tr><td><code>autoroute_route_decisions_total{tier,layer}</code></td><td class="num">counter</td><td>Where is traffic going, and which layer decided?</td></tr>
           <tr><td><code>autoroute_decision_latency_seconds</code></td><td class="num">histogram</td><td>What is the router adding to p50 / p95?</td></tr>
-          <tr><td><code>autoroute_cheap_model_recall</code></td><td class="num">gauge</td><td>Of prompts a cheap model could have handled, what share did we route cheap? <em>(the metric every commercial router quietly fails)</em></td></tr>
+          <tr><td><code>autoroute_router_degraded_total</code></td><td class="num">counter</td><td>How often did the router miss a confident pick and fall back to the default tier?</td></tr>
           <tr><td><code>autoroute_fallback_total{from,to}</code></td><td class="num">counter</td><td>How often is a provider failing us?</td></tr>
+          <tr><td><code>autoroute_circuit_breaker_state</code> / <code>_trips_total</code></td><td class="num">gauge / counter</td><td>Is a provider's breaker open right now, and how often has it tripped?</td></tr>
           <tr><td><code>autoroute_shadow_quality_delta</code></td><td class="num">histogram</td><td>Are cheap routes silently worse?</td></tr>
-          <tr><td><code>autoroute_cost_usd_total</code> vs <code>_baseline_usd_total</code></td><td class="num">counter</td><td>Actual spend vs always-frontier &mdash; the real saving, measured.</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="col" style="margin-top:14px;font-size:.9rem;color:var(--muted)">
+      Cheap-model recall and cost-vs-baseline savings aren't live Prometheus metrics
+      &mdash; they need RouterBench's ground truth to compute, which the running proxy
+      doesn't have. They're the eval harness's job instead: <code>eval/RESULTS.md</code>
+      publishes both, re-checked weekly against the committed baseline.
+    </p>
 
     <div class="callout">
-      <h3>Honest break-even (this goes in the README, not buried)</h3>
+      <h3>Honest break-even</h3>
       <p>
         Routing is a cost you add hoping to remove a bigger one. Embedding-only routing
         (~15 ms, &asymp;$0) clears that bar almost always. The saving is the
         model price gap avoided &mdash; frontier &asymp; $15 / M output vs cheap &asymp; $0.25 / M &mdash; which only
-        matters if a real fraction of your traffic is genuinely routable. The harness reports that
-        fraction for the benchmark; your mileage is your own traffic.
+        matters if a real fraction of your traffic is genuinely routable.
+      </p>
+      <p>
+        On RouterBench's held-out split (4,436 rows the thresholds were never tuned
+        against), the measured answer is <b>2.5% cheaper than always calling the
+        frontier model, at 80.4% accuracy versus 81.4%</b> &mdash; a real but modest win,
+        not a dramatic one. RouterBench is academic-exam-style prompts (MMLU, GSM8K,
+        Winogrande); the L1 rules and L2 exemplars were authored for general assistant
+        chat, so they don't confidently discriminate this benchmark's traffic &mdash;
+        <b>95.6% of held-out rows land in the conservative default</b> rather than a
+        confident L2 pick, and the router pays the frontier price rather than guess.
+        See <code>eval/RESULTS.md</code> for the full numbers.
       </p>
     </div>
   </section>
