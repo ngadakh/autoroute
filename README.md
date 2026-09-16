@@ -28,8 +28,7 @@ build story and the numbers that didn't flatter it are in
 [`docs/BLOG.md`](docs/BLOG.md).
 
 Design and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · visual
-version: <https://claude.ai/artifact/NKpo7ZjUK5BCcgSmPFEpcJ>
-· M0 de-risking spike: [`SPIKE.md`](SPIKE.md)
+version: [`docs/architecture.html`](docs/architecture.html)
 
 ## Quickstart
 
@@ -227,9 +226,11 @@ silently disabled there (logged, not fatal) even with `shadow.enabled:
 true`. Run locally with `make run` after `make setup`, or `make
 build-router`, to see it fire for real.
 
-## The M0 spike (embedding router)
+## The embedding router spike
 
-The routing brain was prototyped separately first — see [`SPIKE.md`](SPIKE.md).
+The routing brain (in-process ONNX embedding + nearest-centroid
+classification over route exemplars) was prototyped separately first, before
+the proxy in `cmd/autoroute` existed, to de-risk it in isolation:
 
 ```sh
 make setup   # fetch ONNX Runtime + all-MiniLM-L6-v2 (~150 MB, into gitignored dirs)
@@ -262,18 +263,6 @@ docs/BLOG.md            build story + honest findings, M0-M5
 docs/demo.tape          vhs script -> docs/demo.gif
 scripts/record-demo.sh  asciinema+agg fallback for docs/demo.gif (see docs/demo.tape)
 ```
-
-## Roadmap
-
-| | Branch | State |
-|---|---|---|
-| M0 | `m0-spike` | ✅ in-process ONNX embedding + nearest-centroid router |
-| M1 | `m1-proxy-skeleton` | ✅ OpenAI-compatible proxy: forward, stream, health, metrics, Docker |
-| M2 | `m2-layered-router` | ✅ L1 heuristics + L2 embedding + confidence band; decision log; degrade-to-passthrough |
-| M3 | `m3-reliability-observability` | ✅ breakers, fallback chain, full metrics, Grafana, Helm |
-| M4 | `m4-eval-harness` | ✅ RouterBench replay, published numbers, break-even |
-| M5 | `m5-shadow-detector` | ✅ shadow sampling + quality-delta metric + alert |
-| **M6** | `m6-flagship-polish` | **⬅ README, blog draft, demo GIF** |
 
 ## License
 

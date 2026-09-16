@@ -23,7 +23,8 @@ const (
 // (all-MiniLM-L6-v2 and friends). It implements the pieces that matter for
 // semantic routing: lowercase, whitespace + punctuation splitting, and greedy
 // longest-match WordPiece. It deliberately skips accent stripping and CJK
-// handling — see SPIKE.md for why that is acceptable at this layer.
+// segmentation — fine for embedding similarity on the routing exemplars this
+// project ships with; revisit if a multilingual model is adopted.
 type Tokenizer struct {
 	vocab      map[string]int64
 	unkID      int64

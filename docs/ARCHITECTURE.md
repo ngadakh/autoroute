@@ -1,11 +1,11 @@
 # AutoRoute — Architecture
 
-> Design phase. This document describes the target system; see
-> [`../SPIKE.md`](../SPIKE.md) for what is actually built (M0). Traffic shares and
-> confidence values in the examples are illustrative pending the M4 eval run.
+> Traffic shares and confidence values in the worked examples below are
+> illustrative, not measured production traffic — see
+> [`../eval/RESULTS.md`](../eval/RESULTS.md) for the real numbers from the
+> eval harness.
 >
-> Rendered / visual version:
-> <https://claude.ai/artifact/NKpo7ZjUK5BCcgSmPFEpcJ>
+> Rendered / visual version: [`architecture.html`](architecture.html)
 
 ## Overview
 
@@ -114,8 +114,8 @@ taking the default outright — not built yet (see
 | **L1 only** | Pure Go: tokenise, regex, feature checks | ~0.3 ms | $0 | large — most short / obvious prompts |
 | **+ L2** | One embedding (MiniLM / bge-small) in-process on CPU, nearest-cluster lookup | ~2–25 ms | ≈ $0 | most of the remainder |
 
-Measured L2 latency in the M0 spike: **warm p50 2.4 ms** on Apple Silicon CPU
-(see [`../SPIKE.md`](../SPIKE.md)).
+Measured L2 latency during development: **warm p50 2.4 ms** on Apple Silicon
+CPU.
 
 ## Worked examples
 
@@ -195,11 +195,11 @@ whether the deployed router is behaving like the eval said it would.
 ### Honest break-even
 
 Routing is a cost you add hoping to remove a bigger one. Embedding-only routing
-(~15 ms, ≈ $0) clears that bar almost always.
-The saving is the model price gap avoided — frontier ≈ $15 / M output vs cheap
-≈ $0.25 / M — which only matters if a real fraction of traffic is genuinely
-routable. The harness reports that fraction for the benchmark; production mileage
-is your own traffic.
+(~15 ms, ≈ $0) clears that bar almost always. The saving is the model price
+gap avoided — frontier ≈ $15 / M output vs cheap ≈ $0.25 / M — which only
+matters if a real fraction of traffic is genuinely routable. The harness
+reports that fraction for the benchmark; production mileage is your own
+traffic.
 
 ## Deliberately out of scope
 
@@ -212,30 +212,4 @@ is your own traffic.
 - **No retraining to add a model.** Tiers and domain→tier rules are config,
   Arch-Router-style.
 
-## Repository layout (target)
-
-```
-cmd/autoroute/            main
-cmd/spike-embed/          M0 spike (built)
-internal/embed/           WordPiece tokenizer + in-process ONNX embedder (built)
-internal/router/          Router iface, layered pipeline, exemplars + L2 classifier (partial)
-internal/proxy/           OpenAI schema, streaming, provider adapters
-internal/reliability/     breaker, fallback, degrade
-internal/observability/   prom metrics, otel, decision log
-internal/shadow/          silent-quality-failure detector
-eval/                     harness, RouterBench loader, chart gen, RESULTS.md
-deploy/helm/ deploy/grafana/ deploy/compose/
-docs/                     this file, benchmark methodology, blog draft
-```
-
-## Milestones
-
-| | Branch | State |
-|---|---|---|
-| **M0** | `m0-spike` | ✅ in-process ONNX embedding + nearest-centroid router; latency + RouterBench access confirmed |
-| **M1** | `m1-proxy-skeleton` | OpenAI-compatible passthrough to 2 providers, streaming, `/healthz` `/readyz` `/metrics`, Docker |
-| **M2** | `m2-layered-router` | heuristics + embedding classifier + confidence band; decision log + traces; degrade-to-passthrough |
-| **M3** | `m3-reliability-observability` | breakers, fallback chain, full Prometheus set, Grafana dashboard, Helm chart |
-| **M4** | `m4-eval-harness` | RouterBench + held-out replay, cost-vs-quality chart, `RESULTS.md`, CI job, break-even analysis |
-| **M5** | `m5-shadow-detector` | shadow sampling + quality-delta metric + alert |
-| **M6** | `m6-flagship-polish` | README, blog draft, demo GIF |
+See [`../README.md`](../README.md#layout) for the repository layout.

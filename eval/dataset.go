@@ -1,8 +1,8 @@
 // Package eval is the M4 eval harness: it replays a benchmark dataset
 // through the exact same router pipeline the proxy uses in production
 // (internal/router), and reports cost and accuracy against an always-frontier
-// baseline. See docs/ARCHITECTURE.md's "What gets measured" section and
-// SPIKE.md §5 for the dataset this was built against — RouterBench
+// baseline. See docs/ARCHITECTURE.md's "What gets measured" section for
+// the dataset this was built against — RouterBench
 // (huggingface.co/datasets/withmartian/routerbench), converted to CSV by
 // scripts/convert-routerbench.py (see scripts/setup-routerbench.sh).
 package eval

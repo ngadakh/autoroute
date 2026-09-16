@@ -1,0 +1,856 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>AutoRoute Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --ground:#f3f5f2;
+    --surface:#fbfcfa;
+    --surface-2:#eaeee7;
+    --ink:#191d1a;
+    --muted:#586059;
+    --faint:#8a928a;
+    --line:#d6dbd3;
+    --line-strong:#b7bfb4;
+    --accent:#0c7c69;
+    --accent-soft:#dcece8;
+    --frontier:#a5640f;
+    --frontier-soft:#f0e5d3;
+    --danger:#b23a37;
+    --danger-soft:#f0dcda;
+    --shadow:0 1px 2px rgba(20,30,25,.04),0 8px 24px -12px rgba(20,30,25,.14);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#12140f;
+      --surface:#1a1d17;
+      --surface-2:#23271f;
+      --ink:#e7eae2;
+      --muted:#a4aca2;
+      --faint:#7b837a;
+      --line:#333930;
+      --line-strong:#484f43;
+      --accent:#3fb9a2;
+      --accent-soft:#123a33;
+      --frontier:#d5943f;
+      --frontier-soft:#3a2d1b;
+      --danger:#e27069;
+      --danger-soft:#3d2422;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#12140f;
+    --surface:#1a1d17;
+    --surface-2:#23271f;
+    --ink:#e7eae2;
+    --muted:#a4aca2;
+    --faint:#7b837a;
+    --line:#333930;
+    --line-strong:#484f43;
+    --accent:#3fb9a2;
+    --accent-soft:#123a33;
+    --frontier:#d5943f;
+    --frontier-soft:#3a2d1b;
+    --danger:#e27069;
+    --danger-soft:#3d2422;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:16px;padding-block:56px}
+  .col{max-width:70ch}
+
+  h1,h2,h3{line-height:1.2;text-wrap:balance;font-weight:600;letter-spacing:-.01em}
+  h1{font-size:clamp(2rem,1.4rem + 2.6vw,3rem);margin:.2em 0 .3em;letter-spacing:-.025em}
+  h2{font-size:clamp(1.3rem,1.05rem + 1vw,1.7rem);margin:0 0 .5em}
+  h3{font-size:1.02rem;margin:0 0 .35em}
+  p{margin:0 0 1em}
+  a{color:var(--accent)}
+
+  .eyebrow{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.72rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 1.4em;
+  }
+  .standfirst{font-size:1.12rem;color:var(--muted);max-width:66ch}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:1.6em 0 0;padding:0;list-style:none}
+  .chips li{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.74rem;letter-spacing:.02em;
+    border:1px solid var(--line-strong);border-radius:999px;
+    padding:4px 11px;color:var(--muted);background:var(--surface);
+  }
+
+  section{margin-top:72px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:22px}
+  .sec-num{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.8rem;color:var(--faint);letter-spacing:.1em;padding-top:.2em;
+  }
+  .sec-head h2{margin:0}
+
+  figure{margin:0}
+  .fig{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    box-shadow:var(--shadow);
+    padding:22px;
+    margin:8px 0 0;
+  }
+  .fig .scroll{overflow-x:auto}
+  .fig svg{display:block;height:auto;max-width:100%}
+  .fig--wide svg{min-width:720px}
+  .fig--trace svg{min-width:560px}
+  figcaption{
+    font-size:.86rem;color:var(--muted);margin-top:16px;
+    padding-top:14px;border-top:1px solid var(--line);max-width:74ch;
+  }
+  figcaption b{color:var(--ink);font-weight:600}
+
+  /* diagram tokens (page CSS cascades into inline SVG) */
+  .d text{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;fill:var(--ink)}
+  .d .t-mut{fill:var(--muted)}
+  .d .t-fnt{fill:var(--faint)}
+  .d .t-acc{fill:var(--accent)}
+  .d .t-fro{fill:var(--frontier)}
+  .d .t-dan{fill:var(--danger)}
+  .d .s-ink{stroke:var(--ink)}
+  .d .s-line{stroke:var(--line-strong)}
+  .d .s-mut{stroke:var(--muted)}
+  .d .s-acc{stroke:var(--accent)}
+  .d .s-fro{stroke:var(--frontier)}
+  .d .s-dan{stroke:var(--danger)}
+  .d .f-surf{fill:var(--surface)}
+  .d .f-s2{fill:var(--surface-2)}
+  .d .f-none{fill:none}
+  .d .f-acc-s{fill:var(--accent-soft)}
+  .d .f-fro-s{fill:var(--frontier-soft)}
+  .d .f-dan-s{fill:var(--danger-soft)}
+  .d .f-acc{fill:var(--accent)}
+  .d .f-mut{fill:var(--muted)}
+  .d .box{stroke-width:1.3}
+  .d .lead{stroke-width:1.4}
+  .d .path{stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .d .dash{stroke-dasharray:5 4}
+  .d .thin{stroke-width:1}
+
+  .legend{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+    gap:14px 26px;margin:26px 0 0;padding:0;
+  }
+  .legend div{border-left:2px solid var(--line-strong);padding:2px 0 2px 12px}
+  .legend dt{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.8rem;color:var(--ink);font-weight:500;margin-bottom:1px;
+  }
+  .legend dd{margin:0;font-size:.86rem;color:var(--muted);overflow-wrap:anywhere}
+
+  table{border-collapse:collapse;width:100%;font-size:.88rem;margin:8px 0 0}
+  .tbl-scroll{overflow-x:auto}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+  th{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:500;
+  }
+  td code,.mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:.86em}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+
+  .traces{display:flex;flex-direction:column;gap:18px;margin-top:8px}
+  .trace{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    box-shadow:var(--shadow);padding:20px 22px;
+  }
+  .trace-tag{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);
+  }
+  .trace .prompt{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.82rem;line-height:1.5;color:var(--ink);
+    background:var(--surface-2);border:1px solid var(--line);border-radius:7px;
+    padding:10px 13px;margin:8px 0 16px;white-space:pre-wrap;overflow-x:auto;
+  }
+  .trace .scroll{overflow-x:auto}
+  .trace svg{display:block;height:auto;max-width:100%;min-width:520px}
+  .verdict{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+    gap:10px 24px;margin:16px 0 0;
+  }
+  .verdict div{border-left:2px solid var(--accent);padding:1px 0 1px 11px}
+  .verdict dt{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:1px;
+  }
+  .verdict dd{margin:0;font-size:.87rem;color:var(--ink);overflow-wrap:anywhere}
+  .verdict.v-warn div{border-left-color:var(--frontier)}
+  .verdict.v-dan div{border-left-color:var(--danger)}
+
+  .tier{
+    font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    font-size:.78em;padding:1px 7px;border-radius:5px;border:1px solid;
+  }
+  .tier.cheap{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+  .tier.mid{color:var(--muted);border-color:var(--line-strong);background:var(--surface-2)}
+  .tier.frontier{color:var(--frontier);border-color:var(--frontier);background:var(--frontier-soft)}
+
+  .callout{
+    border:1px solid var(--line-strong);border-left:3px solid var(--accent);
+    background:var(--surface);border-radius:8px;padding:16px 18px;margin-top:24px;
+  }
+  .callout h3{margin-bottom:.3em}
+  .callout p{margin:0;font-size:.92rem;color:var(--muted)}
+
+  .nongoals{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:8px}
+  .nongoals li{
+    font-size:.92rem;color:var(--muted);padding-left:26px;position:relative;
+  }
+  .nongoals li::before{
+    content:"\2014";position:absolute;left:0;color:var(--danger);
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .nongoals b{color:var(--ink);font-weight:600}
+
+  footer{
+    margin-top:80px;padding-top:22px;border-top:1px solid var(--line);
+    font-size:.82rem;color:var(--faint);
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+
+  <header class="col">
+    <p class="eyebrow">Architecture reference</p>
+    <h1>AutoRoute</h1>
+    <p class="standfirst">
+      An OpenAI-compatible proxy that picks the cheapest model likely to answer a prompt well &mdash;
+      and is built to actually run in production: health checks, circuit breakers, graceful
+      degradation, first-class metrics, and a reproducible eval harness whose numbers are published.
+    </p>
+    <ul class="chips">
+      <li>Go service</li>
+      <li>POST /v1/chat/completions in &rarr; same schema out</li>
+      <li>in-process ONNX embedding</li>
+      <li>zero LLM calls on the common path</li>
+      <li>Prometheus &middot; OpenTelemetry</li>
+      <li>Helm chart &middot; K8s probes</li>
+    </ul>
+  </header>
+
+  <!-- ============================================================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>System architecture</h2></div>
+    <p class="col">
+      A request enters as an OpenAI-compatible call and leaves as one. In between, the
+      <b>router</b> adds a decision (which model tier) and the <b>dispatcher</b> adds resilience
+      (breaker, fallback, retry). Everything else &mdash; the embedding model, the decision store,
+      the shadow sampler &mdash; hangs off that spine and is observable.
+    </p>
+
+    <figure class="fig fig--wide">
+      <div class="scroll">
+        <svg class="d" viewBox="0 0 970 384" role="img"
+             aria-label="AutoRoute system architecture: client posts to the Go service; ingest hands to a two-layer router pipeline (L1 rules, L2 embedding) then to the dispatcher, which routes to cheap, mid or frontier providers. Supporting components: model catalogue, in-process ONNX embedding, decision store, shadow sampler, and an observability strip.">
+          <defs>
+            <marker id="a1-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" class="f-mut"/>
+            </marker>
+            <marker id="a1-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" class="f-acc"/>
+            </marker>
+          </defs>
+
+          <!-- container -->
+          <rect x="150" y="26" width="640" height="344" rx="12" class="f-surf s-line box"/>
+          <text x="164" y="18" font-size="11" class="t-mut">autoroute &mdash; Go service</text>
+
+          <!-- client -->
+          <rect x="20" y="120" width="100" height="46" rx="7" class="f-s2 s-line box"/>
+          <text x="70" y="141" font-size="12" text-anchor="middle">client</text>
+          <text x="70" y="156" font-size="9.5" text-anchor="middle" class="t-fnt">app / SDK</text>
+          <line x1="120" y1="143" x2="164" y2="143" class="s-mut lead" marker-end="url(#a1-ink)"/>
+          <text x="142" y="135" font-size="9" text-anchor="middle" class="t-fnt">HTTP</text>
+
+          <!-- top: embedding -->
+          <rect x="366" y="40" width="104" height="50" rx="7" class="f-surf s-line box"/>
+          <text x="418" y="61" font-size="11" text-anchor="middle">embedding</text>
+          <text x="418" y="76" font-size="9" text-anchor="middle" class="t-fnt">ONNX &middot; in-process</text>
+
+          <line x1="418" y1="90" x2="450" y2="128" class="s-mut lead" marker-end="url(#a1-ink)"/>
+          <text x="404" y="112" font-size="9" class="t-fnt">cosine sim</text>
+
+          <!-- main band -->
+          <rect x="168" y="118" width="112" height="58" rx="7" class="f-surf s-line box"/>
+          <text x="224" y="142" font-size="11" text-anchor="middle">ingest</text>
+          <text x="224" y="157" font-size="9" text-anchor="middle" class="t-fnt">schema &middot; auth</text>
+
+          <rect x="296" y="104" width="244" height="86" rx="8" class="f-s2 s-line box"/>
+          <text x="304" y="119" font-size="9.5" class="t-mut">router pipeline</text>
+          <rect x="306" y="128" width="108" height="42" rx="6" class="f-surf s-line box"/>
+          <text x="360" y="147" font-size="10.5" text-anchor="middle">L1</text>
+          <text x="360" y="161" font-size="8.5" text-anchor="middle" class="t-fnt">rules</text>
+          <rect x="422" y="128" width="108" height="42" rx="6" class="f-surf s-line box"/>
+          <text x="476" y="147" font-size="10.5" text-anchor="middle">L2</text>
+          <text x="476" y="161" font-size="8.5" text-anchor="middle" class="t-fnt">embed</text>
+          <line x1="414" y1="149" x2="422" y2="149" class="s-mut thin" marker-end="url(#a1-ink)"/>
+
+          <line x1="280" y1="147" x2="296" y2="147" class="s-mut lead" marker-end="url(#a1-ink)"/>
+
+          <rect x="560" y="118" width="156" height="58" rx="7" class="f-surf s-line box"/>
+          <text x="638" y="140" font-size="11" text-anchor="middle">dispatch</text>
+          <text x="638" y="155" font-size="8.5" text-anchor="middle" class="t-fnt">breaker &middot; fallback &middot; retry</text>
+          <line x1="540" y1="147" x2="560" y2="147" class="s-acc path" marker-end="url(#a1-acc)"/>
+          <text x="550" y="139" font-size="8.5" text-anchor="middle" class="t-acc">tier</text>
+
+          <!-- support / output band -->
+          <rect x="168" y="228" width="120" height="62" rx="7" class="f-surf s-line box"/>
+          <text x="228" y="250" font-size="10.5" text-anchor="middle">catalogue</text>
+          <text x="228" y="264" font-size="8.5" text-anchor="middle" class="t-fnt">price &middot; p50/p95</text>
+          <text x="228" y="276" font-size="8.5" text-anchor="middle" class="t-fnt">tier rules</text>
+          <path d="M244 228 L244 206 L300 206 L300 190" class="f-none s-mut lead" marker-end="url(#a1-ink)"/>
+          <path d="M262 228 L262 200 L600 200 L600 176" class="f-none s-mut lead" marker-end="url(#a1-ink)"/>
+          <text x="418" y="210" font-size="8.5" text-anchor="middle" class="t-fnt">prices &middot; SLOs</text>
+
+          <rect x="376" y="228" width="132" height="46" rx="7" class="f-surf s-line box"/>
+          <text x="442" y="248" font-size="10.5" text-anchor="middle">decision store</text>
+          <text x="442" y="262" font-size="8" text-anchor="middle" class="t-fnt">model&middot;tier&middot;conf&middot;reason</text>
+          <line x1="442" y1="190" x2="442" y2="228" class="s-mut lead" marker-end="url(#a1-ink)"/>
+          <text x="450" y="218" font-size="8.5" class="t-fnt">append</text>
+
+          <rect x="596" y="228" width="120" height="46" rx="7" class="f-surf s-line box"/>
+          <text x="656" y="248" font-size="10.5" text-anchor="middle">shadow sampler</text>
+          <text x="656" y="262" font-size="8" text-anchor="middle" class="t-fnt">N% of cheap routes</text>
+          <line x1="656" y1="176" x2="656" y2="228" class="s-mut lead" marker-end="url(#a1-ink)"/>
+
+          <!-- observability strip -->
+          <rect x="168" y="300" width="548" height="34" rx="7" class="f-none s-line box dash"/>
+          <text x="182" y="321" font-size="9.5" class="t-mut">/healthz &middot; /readyz</text>
+          <text x="442" y="321" font-size="9.5" text-anchor="middle" class="t-mut">/metrics &mdash; Prometheus</text>
+          <text x="702" y="321" font-size="9.5" text-anchor="end" class="t-mut">OpenTelemetry spans</text>
+          <line x1="442" y1="274" x2="442" y2="300" class="s-line thin dash"/>
+          <line x1="656" y1="274" x2="656" y2="300" class="s-line thin dash"/>
+
+          <!-- providers -->
+          <rect x="812" y="104" width="126" height="44" rx="7" class="f-acc-s s-acc box"/>
+          <text x="875" y="123" font-size="10.5" text-anchor="middle" class="t-acc">cheap tier</text>
+          <text x="875" y="137" font-size="8.5" text-anchor="middle" class="t-acc">Haiku-class</text>
+
+          <rect x="812" y="160" width="126" height="44" rx="7" class="f-surf s-line box"/>
+          <text x="875" y="179" font-size="10.5" text-anchor="middle">mid tier</text>
+          <text x="875" y="193" font-size="8.5" text-anchor="middle" class="t-fnt">Sonnet-class</text>
+
+          <rect x="812" y="216" width="126" height="44" rx="7" class="f-fro-s s-fro box"/>
+          <text x="875" y="235" font-size="10.5" text-anchor="middle" class="t-fro">frontier tier</text>
+          <text x="875" y="249" font-size="8.5" text-anchor="middle" class="t-fro">Opus / GPT-5-class</text>
+
+          <path d="M716 138 L812 126" class="s-acc path" marker-end="url(#a1-acc)"/>
+          <text x="762" y="122" font-size="8.5" class="t-fnt">&asymp;70%</text>
+          <path d="M716 147 L812 182" class="s-mut lead" marker-end="url(#a1-ink)"/>
+          <text x="760" y="171" font-size="8.5" class="t-fnt">&asymp;22%</text>
+          <path d="M716 156 L812 238" class="s-mut lead" marker-end="url(#a1-ink)"/>
+          <text x="740" y="210" font-size="8.5" class="t-fnt">&asymp;8%</text>
+
+          <path d="M716 250 L760 250 L760 252 L812 252" class="f-none s-mut lead dash" marker-end="url(#a1-ink)"/>
+          <text x="748" y="270" font-size="8.5" class="t-fnt">async &middot; off critical path</text>
+
+          <text x="962" y="360" font-size="8.5" text-anchor="end" class="t-fnt">arrow widths &amp; shares are illustrative</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>One spine, everything else hangs off it.</b> The embedding model runs
+        <b>in the process</b> &mdash; no embedding API call &mdash; which is the specific thing that keeps
+        RouteLLM and vLLM Semantic Router off the fast path. The dispatcher is where provider
+        failures are absorbed; the router never talks to a provider directly.
+      </figcaption>
+    </figure>
+
+    <dl class="legend">
+      <div><dt>ingest</dt><dd>Parse the OpenAI request, auth, normalise. Pull the last user turn + context signals.</dd></div>
+      <div><dt>router pipeline</dt><dd>L1 rules &rarr; L2 embedding classifier with confidence bands. Emits a <span class="mono">RouteDecision</span>.</dd></div>
+      <div><dt>catalogue</dt><dd>Config: model list, live prices, measured p50/p95 latency, and the domain&rarr;tier rules.</dd></div>
+      <div><dt>decision store</dt><dd>Append-only log of every decision + features, for eval replay and debugging.</dd></div>
+      <div><dt>shadow sampler</dt><dd>Replays N% of cheap-routed prompts against the frontier model, off the critical path, to catch silent quality loss.</dd></div>
+      <div><dt>dispatch</dt><dd>Per-provider circuit breaker, fallback chain, retry budget, and degrade-to-passthrough.</dd></div>
+      <div><dt>observability</dt><dd>Kubernetes probes, Prometheus metrics, OpenTelemetry traces &mdash; every component reports here.</dd></div>
+    </dl>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>The decision pipeline</h2></div>
+    <p class="col">
+      The router predicts the <em>prompt's</em> difficulty and category, then maps that to a model
+      tier that was decided offline. It never calls the candidate models to compare them &mdash; that
+      would cost N&times; per request. Each layer can end the decision; later layers only run when the
+      earlier one is not confident enough.
+    </p>
+
+    <figure class="fig fig--wide">
+      <div class="scroll">
+        <svg class="d" viewBox="0 0 720 486" role="img"
+             aria-label="Decision pipeline flowchart: L1 heuristics; if confident, emit tier. Otherwise L2 embedding classifier produces a difficulty score and confidence. If confidence is at least theta-high, emit tier. Otherwise, whether in the uncertain middle band or below theta-low, fall back to the conservative default tier, frontier, then emit.">
+          <defs>
+            <marker id="a2-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" class="f-mut"/>
+            </marker>
+            <marker id="a2-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" class="f-acc"/>
+            </marker>
+          </defs>
+
+          <!-- entry -->
+          <rect x="270" y="18" width="180" height="40" rx="7" class="f-s2 s-line box"/>
+          <text x="360" y="42" font-size="11" text-anchor="middle">last user turn + signals</text>
+          <line x1="360" y1="58" x2="360" y2="86" class="s-mut lead" marker-end="url(#a2-ink)"/>
+
+          <!-- L1 -->
+          <rect x="248" y="86" width="224" height="66" rx="8" class="f-surf s-line box"/>
+          <text x="360" y="110" font-size="12" text-anchor="middle">L1 &mdash; heuristics</text>
+          <text x="360" y="128" font-size="9" text-anchor="middle" class="t-fnt">tokens &middot; code fences &middot; task verbs</text>
+          <text x="360" y="141" font-size="9" text-anchor="middle" class="t-fnt">turns &middot; tools &middot; JSON mode &middot; images</text>
+
+          <!-- L1 gate -->
+          <path d="M360 152 L432 196 L360 240 L288 196 Z" class="f-surf s-line box"/>
+          <text x="360" y="192" font-size="10" text-anchor="middle">rule fires with</text>
+          <text x="360" y="205" font-size="10" text-anchor="middle">high certainty?</text>
+
+          <line x1="432" y1="196" x2="556" y2="196" class="s-acc path" marker-end="url(#a2-acc)"/>
+          <text x="494" y="188" font-size="9" text-anchor="middle" class="t-acc">yes</text>
+          <line x1="360" y1="240" x2="360" y2="266" class="s-mut lead" marker-end="url(#a2-ink)"/>
+          <text x="372" y="257" font-size="9" class="t-fnt">no</text>
+
+          <!-- L2 -->
+          <rect x="240" y="266" width="240" height="70" rx="8" class="f-surf s-line box"/>
+          <text x="360" y="290" font-size="12" text-anchor="middle">L2 &mdash; embedding classifier</text>
+          <text x="360" y="308" font-size="9" text-anchor="middle" class="t-fnt">1 in-process embedding &rarr; nearest cluster</text>
+          <text x="360" y="321" font-size="9" text-anchor="middle" class="t-fnt">&rarr; difficulty score + confidence</text>
+
+          <!-- L2 gate -->
+          <path d="M360 336 L440 382 L360 428 L280 382 Z" class="f-surf s-line box"/>
+          <text x="360" y="378" font-size="10" text-anchor="middle">confidence</text>
+          <text x="360" y="391" font-size="10" text-anchor="middle">band?</text>
+
+          <line x1="440" y1="382" x2="556" y2="382" class="s-acc path" marker-end="url(#a2-acc)"/>
+          <text x="500" y="374" font-size="9" text-anchor="middle" class="t-acc">&ge; &theta;_high</text>
+
+          <line x1="360" y1="428" x2="360" y2="452" class="s-mut lead" marker-end="url(#a2-ink)"/>
+          <text x="372" y="444" font-size="9" class="t-fnt">&lt; &theta;_low</text>
+
+          <!-- default tier -->
+          <rect x="176" y="452" width="368" height="26" rx="7" class="f-surf s-line box"/>
+          <text x="360" y="469" font-size="10" text-anchor="middle">conservative default tier <tspan class="t-fnt">(frontier)</tspan></text>
+          <path d="M544 465 L588 465 L588 400" class="f-none s-mut lead" marker-end="url(#a2-ink)"/>
+
+          <!-- middle band note -->
+          <line x1="280" y1="382" x2="200" y2="382" class="s-line thin dash"/>
+          <text x="196" y="379" font-size="8.5" text-anchor="end" class="t-fnt">&theta;_low &le; c &lt; &theta;_high</text>
+          <text x="196" y="391" font-size="8.5" text-anchor="end" class="t-fnt">&rarr; take default tier</text>
+
+          <!-- emit -->
+          <rect x="556" y="176" width="150" height="40" rx="7" class="f-acc-s s-acc box"/>
+          <text x="631" y="200" font-size="11" text-anchor="middle" class="t-acc">emit tier &rarr; dispatch</text>
+
+          <rect x="556" y="362" width="150" height="40" rx="7" class="f-surf s-line box"/>
+          <text x="631" y="381" font-size="10" text-anchor="middle">emit tier</text>
+          <text x="631" y="394" font-size="8.5" text-anchor="middle" class="t-fnt">&rarr; dispatch</text>
+          <path d="M631 362 L631 216" class="f-none s-mut lead dash"/>
+        </svg>
+      </div>
+      <figcaption>
+        Above <span class="mono">&theta;_high</span>, L2's pick stands. Below it &mdash; whether in
+        the uncertain middle band or under <span class="mono">&theta;_low</span> &mdash; the router
+        falls back to the <b>conservative default</b> (frontier): it fails toward quality rather
+        than guessing. The two sub-bands are tagged separately in the decision log and metrics
+        (<span class="mono">L2-band-default</span> vs <span class="mono">degraded-low-confidence</span>)
+        so you can tell them apart, but today they resolve identically.
+        <span class="mono">&theta;_low</span> is reserved for a future L3 judge layer that would
+        arbitrate the low-confidence band instead of taking the default outright &mdash; not built
+        yet.
+      </figcaption>
+    </figure>
+
+    <h3 style="margin-top:34px">Per-request latency &amp; cost budget</h3>
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr><th>Path</th><th>What runs</th><th class="num">Added latency</th><th class="num">Added cost</th><th>Traffic share</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tier cheap">L1 only</span></td>
+            <td>Pure Go: tokenise, regex, feature checks</td>
+            <td class="num">~0.3 ms</td>
+            <td class="num">$0</td>
+            <td>large &mdash; most short/obvious prompts</td>
+          </tr>
+          <tr>
+            <td><span class="tier mid">+ L2</span></td>
+            <td>One embedding (MiniLM / bge-small) in-process on CPU, nearest-cluster lookup</td>
+            <td class="num">~10&ndash;25 ms</td>
+            <td class="num">&asymp; $0</td>
+            <td>most of the remainder</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Worked examples</h2></div>
+    <p class="col">
+      Same pipeline every time; the <span style="color:var(--accent)">accent path</span> shows what
+      actually ran. A dip under a station means the request bypassed it.
+    </p>
+
+    <div class="traces">
+
+      <!-- A -->
+      <article class="trace">
+        <p class="trace-tag">Example A &middot; trivial factual lookup</p>
+        <p class="prompt">Who is the prime minister of India?</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace A: prompt to L1, decision at L1, path dips below L2 to the dispatcher, then to the cheap-tier model.">
+            <defs><marker id="tA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L270 52 C310 52 310 70 350 70 L610 70 C650 70 650 52 700 52 L740 52" class="s-acc path" marker-end="url(#tA)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="6" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">heuristics</text>
+              <circle cx="480" cy="70" r="4" class="f-none s-mut thin"/><text x="480" y="34" class="t-fnt">L2</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-acc-s s-acc box"/>
+            <text x="820" y="56" font-size="10" text-anchor="middle" class="t-acc">cheap model</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tA)"/>
+          </svg>
+        </div>
+        <dl class="verdict">
+          <div><dt>Decided at</dt><dd>L1 &mdash; heuristics</dd></div>
+          <div><dt>Signal</dt><dd>9 tokens &middot; no code &middot; single turn &middot; factual-lookup shape</dd></div>
+          <div><dt>Route</dt><dd><span class="tier cheap">cheap tier</span> Haiku-class</dd></div>
+          <div><dt>Routing overhead</dt><dd>~0.3 ms &middot; $0 &middot; 0 extra model calls</dd></div>
+        </dl>
+      </article>
+
+      <!-- B -->
+      <article class="trace">
+        <p class="trace-tag">Example B &middot; formal reasoning</p>
+        <p class="prompt">Prove that the sum of the first n odd numbers equals n&sup2;.</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace B: prompt through L1 and L2; decision at L2 with confidence 0.91; straight through to the dispatcher, then to the frontier-tier model.">
+            <defs><marker id="tB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L740 52" class="s-acc path" marker-end="url(#tB)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="5" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">inconclusive</text>
+              <circle cx="480" cy="52" r="6" class="f-acc"/><text x="480" y="34" class="t-acc">L2</text><text x="480" y="88" font-size="8.5" class="t-fnt">conf 0.91</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-fro-s s-fro box"/>
+            <text x="820" y="56" font-size="10" text-anchor="middle" class="t-fro">frontier model</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tB)"/>
+          </svg>
+        </div>
+        <dl class="verdict v-warn">
+          <div><dt>Decided at</dt><dd>L2 &mdash; embedding classifier</dd></div>
+          <div><dt>Signal</dt><dd>nearest cluster &ldquo;formal-math / proof&rdquo; &middot; difficulty 0.88 &middot; confidence 0.91</dd></div>
+          <div><dt>Route</dt><dd><span class="tier frontier">frontier tier</span> Opus / GPT-5-class</dd></div>
+          <div><dt>Routing overhead</dt><dd>~12 ms &middot; &asymp;$0 (embedding is in-process) &middot; 0 extra model calls</dd></div>
+        </dl>
+      </article>
+
+      <!-- C -->
+      <article class="trace">
+        <p class="trace-tag">Example C &middot; scoped code edit</p>
+        <p class="prompt">```py
+def f(x): return [i for i in x if i % 2 == 0]
+```
+Make this idiomatic and add type hints.</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace C: prompt to L1, decision at L1 on the code-fence signal, path dips below L2 to the dispatcher, then to the mid-tier code-specialised model.">
+            <defs><marker id="tC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L270 52 C310 52 310 70 350 70 L610 70 C650 70 650 52 700 52 L740 52" class="s-acc path" marker-end="url(#tC)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="6" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">code fence + edit verb</text>
+              <circle cx="480" cy="70" r="4" class="f-none s-mut thin"/><text x="480" y="34" class="t-fnt">L2</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-surf s-line box"/>
+            <text x="820" y="52" font-size="10" text-anchor="middle">mid model</text>
+            <text x="820" y="63" font-size="8" text-anchor="middle" class="t-fnt">code-specialised</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tC)"/>
+          </svg>
+        </div>
+        <dl class="verdict">
+          <div><dt>Decided at</dt><dd>L1 &mdash; heuristics</dd></div>
+          <div><dt>Signal</dt><dd>fenced code block &middot; imperative edit verb &middot; 34 tokens &middot; bounded scope</dd></div>
+          <div><dt>Route</dt><dd><span class="tier mid">mid tier</span> code-specialised model</dd></div>
+          <div><dt>Routing overhead</dt><dd>~0.4 ms &middot; $0 &middot; 0 extra model calls</dd></div>
+        </dl>
+      </article>
+
+      <!-- D -->
+      <article class="trace">
+        <p class="trace-tag">Example D &middot; genuinely ambiguous &mdash; low confidence, conservative default</p>
+        <p class="prompt">Here's my plan for a B2B pricing change &mdash; switching from seats to usage. Is this a good idea?</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 96" role="img"
+               aria-label="Trace D: prompt through L1 and L2; L2 confidence 0.58 is below theta-low; the router takes the conservative default tier straight to the dispatcher, then to the frontier-tier model.">
+            <defs><marker id="tD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker></defs>
+            <line x1="60" y1="52" x2="740" y2="52" class="s-line thin dash"/>
+            <path d="M60 52 L740 52" class="s-acc path" marker-end="url(#tD)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="52" r="4" class="f-acc"/><text x="60" y="34" class="t-mut">PROMPT</text>
+              <circle cx="270" cy="52" r="5" class="f-acc"/><text x="270" y="34" class="t-acc">L1</text><text x="270" y="88" font-size="8.5" class="t-fnt">inconclusive</text>
+              <circle cx="480" cy="52" r="6" class="f-acc"/><text x="480" y="34" class="t-acc">L2</text><text x="480" y="88" font-size="8.5" class="t-fnt">conf 0.58 &lt; &theta;_low 0.75</text>
+              <circle cx="700" cy="52" r="4" class="f-acc"/><text x="700" y="34" class="t-mut">DISPATCH</text>
+            </g>
+            <rect x="768" y="34" width="104" height="36" rx="6" class="f-fro-s s-fro box"/>
+            <text x="820" y="56" font-size="10" text-anchor="middle" class="t-fro">frontier model</text>
+            <line x1="740" y1="52" x2="768" y2="52" class="s-acc path" marker-end="url(#tD)"/>
+          </svg>
+        </div>
+        <dl class="verdict v-warn">
+          <div><dt>Decided at</dt><dd>L2 &mdash; embedding classifier, low-confidence band</dd></div>
+          <div><dt>Signal</dt><dd>open-ended judgement &middot; real stakes &middot; L2 torn between &ldquo;business-advice&rdquo; and &ldquo;casual-opinion&rdquo; clusters &middot; confidence 0.58 &lt; &theta;_low</dd></div>
+          <div><dt>Route</dt><dd><span class="tier frontier">frontier tier</span> &mdash; conservative default, no judge to arbitrate</dd></div>
+          <div><dt>Routing overhead</dt><dd>~12 ms &middot; &asymp;$0 (embedding is in-process) &middot; 0 extra model calls</dd></div>
+        </dl>
+        <figcaption>
+          Same outcome as B here, but for a different reason: B's confidence (0.91) was high
+          enough to trust L2's own pick; D's (0.58) is too low to trust, so the router takes the
+          safe default instead. Either way it lands on <span class="mono">frontier</span>, but the
+          decision log tells them apart (<span class="mono">L2</span> vs
+          <span class="mono">degraded-low-confidence</span>).
+        </figcaption>
+      </article>
+
+      <!-- E -->
+      <article class="trace">
+        <p class="trace-tag">Example E &middot; the cheap provider fails</p>
+        <p class="prompt">Who is the prime minister of India?  &rarr;  routed cheap (as in A), but the cheap provider returns 503</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 150" role="img"
+               aria-label="Trace E: routed to the cheap provider which returns 503; the circuit breaker records the failure; the dispatcher falls back to the mid model, which returns 200 to the client.">
+            <defs>
+              <marker id="tE-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-acc"/></marker>
+              <marker id="tE-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-dan"/></marker>
+            </defs>
+            <line x1="60" y1="46" x2="470" y2="46" class="s-line thin dash"/>
+            <path d="M60 46 L250 46 C300 46 300 60 340 60 L470 60" class="s-acc path" marker-end="url(#tE-a)"/>
+            <g font-size="10" text-anchor="middle">
+              <circle cx="60" cy="46" r="4" class="f-acc"/><text x="60" y="30" class="t-mut">PROMPT</text>
+              <circle cx="250" cy="46" r="6" class="f-acc"/><text x="250" y="30" class="t-acc">L1</text>
+              <circle cx="470" cy="60" r="4" class="f-acc"/><text x="470" y="30" class="t-mut">DISPATCH</text>
+            </g>
+
+            <!-- cheap fails -->
+            <path d="M492 58 L560 40" class="s-dan path" marker-end="url(#tE-d)"/>
+            <rect x="566" y="22" width="150" height="34" rx="6" class="f-dan-s s-dan box"/>
+            <text x="641" y="38" font-size="10" text-anchor="middle" class="t-dan">cheap provider</text>
+            <text x="641" y="50" font-size="8.5" text-anchor="middle" class="t-dan">503 &middot; timeout</text>
+
+            <!-- breaker -->
+            <path d="M641 56 L641 74" class="s-mut thin dash"/>
+            <text x="641" y="88" font-size="8.5" text-anchor="middle" class="t-fnt">breaker records failure</text>
+
+            <!-- fallback to mid -->
+            <path d="M512 66 C540 108 560 118 588 118" class="s-acc path" marker-end="url(#tE-a)"/>
+            <text x="486" y="108" font-size="8.5" class="t-acc">fallback</text>
+            <rect x="592" y="100" width="150" height="34" rx="6" class="f-surf s-line box"/>
+            <text x="667" y="116" font-size="10" text-anchor="middle">mid provider</text>
+            <text x="667" y="128" font-size="8.5" text-anchor="middle" class="t-fnt">200 OK</text>
+
+            <path d="M742 117 L800 117" class="s-acc path" marker-end="url(#tE-a)"/>
+            <text x="828" y="120" font-size="10" text-anchor="middle" class="t-acc">client</text>
+          </svg>
+        </div>
+        <dl class="verdict v-dan">
+          <div><dt>What the client sees</dt><dd>One <span class="mono">200</span> &middot; +40 ms &middot; no error</dd></div>
+          <div><dt>Breaker</dt><dd>Opens after the failure threshold; half-opens to probe after 30 s</dd></div>
+          <div><dt>Metric</dt><dd class="mono">autoroute_fallback_total{from="cheap",to="mid"} +1</dd></div>
+          <div><dt>If all tiers fail</dt><dd>Degrade to passthrough &rarr; configured default model, metric emitted, never a hard 5xx</dd></div>
+        </dl>
+      </article>
+
+      <!-- F -->
+      <article class="trace">
+        <p class="trace-tag">Example F &middot; silent-quality check (asynchronous)</p>
+        <p class="prompt">Request A already returned from the cheap model. 1 in N cheap-routed prompts is shadow-sampled.</p>
+        <div class="scroll">
+          <svg class="d" viewBox="0 0 880 150" role="img"
+               aria-label="Trace F: after the cheap response is served to the client, the shadow sampler asynchronously replays the prompt to the frontier model, scores both responses, and records a quality delta.">
+            <defs><marker id="tF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="f-mut"/></marker></defs>
+
+            <rect x="40" y="30" width="150" height="34" rx="6" class="f-acc-s s-acc box"/>
+            <text x="115" y="46" font-size="10" text-anchor="middle" class="t-acc">cheap response</text>
+            <text x="115" y="58" font-size="8.5" text-anchor="middle" class="t-acc">served to client</text>
+
+            <path d="M190 47 L250 47" class="s-acc path" marker-end="url(#tF)"/>
+            <text x="220" y="38" font-size="8.5" text-anchor="middle" class="t-fnt">done</text>
+
+            <rect x="252" y="30" width="150" height="34" rx="6" class="f-surf s-line box"/>
+            <text x="327" y="50" font-size="10" text-anchor="middle">shadow sampler</text>
+
+            <path d="M327 64 L327 96" class="f-none s-mut lead dash" marker-end="url(#tF)"/>
+            <text x="337" y="84" font-size="8.5" class="t-fnt">replay prompt &middot; async</text>
+
+            <rect x="252" y="98" width="150" height="34" rx="6" class="f-fro-s s-fro box"/>
+            <text x="327" y="114" font-size="10" text-anchor="middle" class="t-fro">frontier model</text>
+            <text x="327" y="126" font-size="8.5" text-anchor="middle" class="t-fro">reference answer</text>
+
+            <path d="M402 115 C460 115 460 47 512 47" class="f-none s-mut lead" marker-end="url(#tF)"/>
+            <rect x="514" y="30" width="150" height="34" rx="6" class="f-surf s-line box"/>
+            <text x="589" y="46" font-size="10" text-anchor="middle">score both</text>
+            <text x="589" y="58" font-size="8.5" text-anchor="middle" class="t-fnt">embedding similarity</text>
+
+            <path d="M664 47 L724 47" class="s-mut lead" marker-end="url(#tF)"/>
+            <rect x="726" y="30" width="140" height="34" rx="6" class="f-s2 s-line box"/>
+            <text x="796" y="46" font-size="9.5" text-anchor="middle">quality delta</text>
+            <text x="796" y="58" font-size="8.5" text-anchor="middle" class="t-fnt">+0.02 &middot; logged</text>
+          </svg>
+        </div>
+        <dl class="verdict">
+          <div><dt>Cost model</dt><dd>Borne on N% of cheap traffic, entirely off the critical path</dd></div>
+          <div><dt>Metric</dt><dd class="mono">autoroute_shadow_quality_delta</dd></div>
+          <div><dt>Alert</dt><dd>Rolling mean delta &gt; 0.15 &rarr; the cheap route is quietly underperforming; page on-call</dd></div>
+          <div><dt>Why it matters</dt><dd>A worse-but-well-formed answer trips no error or latency alarm &mdash; this is the only thing that catches it</dd></div>
+        </dl>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Failure &amp; degradation</h2></div>
+    <p class="col">
+      Provider failures are routine, not exceptional &mdash; 5xx, rate limits, latency spikes to tens of
+      seconds. The dispatcher wraps each provider in a circuit breaker so a sick provider is
+      skipped fast instead of timing out on every request.
+    </p>
+
+    <figure class="fig">
+      <div class="scroll">
+        <svg class="d" viewBox="0 0 640 200" role="img"
+             aria-label="Circuit breaker state machine: Closed state passes traffic; on the failure threshold it moves to Open, which fails fast to the fallback chain; after a cooldown it moves to Half-open and probes with one request; a success returns to Closed, a failure returns to Open.">
+          <defs>
+            <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" class="f-mut"/>
+            </marker>
+          </defs>
+
+          <rect x="34" y="76" width="150" height="48" rx="9" class="f-acc-s s-acc box"/>
+          <text x="109" y="97" font-size="12" text-anchor="middle" class="t-acc">Closed</text>
+          <text x="109" y="113" font-size="8.5" text-anchor="middle" class="t-acc">traffic passes</text>
+
+          <rect x="245" y="76" width="150" height="48" rx="9" class="f-dan-s s-dan box"/>
+          <text x="320" y="97" font-size="12" text-anchor="middle" class="t-dan">Open</text>
+          <text x="320" y="113" font-size="8.5" text-anchor="middle" class="t-dan">fail fast &rarr; fallback</text>
+
+          <rect x="456" y="76" width="150" height="48" rx="9" class="f-fro-s s-fro box"/>
+          <text x="531" y="97" font-size="12" text-anchor="middle" class="t-fro">Half-open</text>
+          <text x="531" y="113" font-size="8.5" text-anchor="middle" class="t-fro">probe: 1 request</text>
+
+          <line x1="184" y1="94" x2="245" y2="94" class="s-mut lead" marker-end="url(#a4)"/>
+          <text x="214" y="86" font-size="8.5" text-anchor="middle" class="t-fnt">&ge; N fails</text>
+
+          <line x1="395" y1="100" x2="456" y2="100" class="s-mut lead" marker-end="url(#a4)"/>
+          <text x="425" y="92" font-size="8.5" text-anchor="middle" class="t-fnt">after 30 s</text>
+
+          <path d="M520 124 C500 168 180 168 120 128" class="f-none s-mut lead" marker-end="url(#a4)"/>
+          <text x="320" y="166" font-size="8.5" text-anchor="middle" class="t-fnt">probe succeeds &rarr; Closed</text>
+
+          <path d="M540 124 C560 156 420 158 396 120" class="f-none s-mut lead" marker-end="url(#a4)"/>
+          <text x="486" y="150" font-size="8.5" text-anchor="middle" class="t-fnt">probe fails &rarr; Open</text>
+
+          <path d="M109 76 C109 44 109 40 109 34" class="f-none s-mut lead" marker-end="url(#a4)"/>
+          <text x="118" y="52" font-size="8.5" class="t-fnt">success resets counter</text>
+        </svg>
+      </div>
+      <figcaption>
+        One breaker per provider, not per tier. The <b>fallback chain</b> is
+        <span class="mono">cheap &rarr; mid &rarr; frontier &rarr; passthrough default</span>; each hop is a
+        counter, so a rising <span class="mono">autoroute_fallback_total</span> is an early signal
+        a provider is degrading before it fully fails.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>What gets measured</h2></div>
+    <p class="col">
+      The differentiator isn't the routing algorithm &mdash; it's that the numbers are honest and
+      re-runnable. The eval harness replays <span class="mono">RouterBench</span> plus a held-out
+      set through the router in CI and commits the results; the runtime metrics below tell you
+      whether the deployed router is behaving like the eval said it would.
+    </p>
+
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>Metric</th><th>Type</th><th>Answers</th></tr></thead>
+        <tbody>
+          <tr><td><code>autoroute_route_decisions_total{tier,layer}</code></td><td class="num">counter</td><td>Where is traffic going, and which layer decided?</td></tr>
+          <tr><td><code>autoroute_decision_latency_seconds</code></td><td class="num">histogram</td><td>What is the router adding to p50 / p95?</td></tr>
+          <tr><td><code>autoroute_cheap_model_recall</code></td><td class="num">gauge</td><td>Of prompts a cheap model could have handled, what share did we route cheap? <em>(the metric every commercial router quietly fails)</em></td></tr>
+          <tr><td><code>autoroute_fallback_total{from,to}</code></td><td class="num">counter</td><td>How often is a provider failing us?</td></tr>
+          <tr><td><code>autoroute_shadow_quality_delta</code></td><td class="num">histogram</td><td>Are cheap routes silently worse?</td></tr>
+          <tr><td><code>autoroute_cost_usd_total</code> vs <code>_baseline_usd_total</code></td><td class="num">counter</td><td>Actual spend vs always-frontier &mdash; the real saving, measured.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <h3>Honest break-even (this goes in the README, not buried)</h3>
+      <p>
+        Routing is a cost you add hoping to remove a bigger one. Embedding-only routing
+        (~15 ms, &asymp;$0) clears that bar almost always. The saving is the
+        model price gap avoided &mdash; frontier &asymp; $15 / M output vs cheap &asymp; $0.25 / M &mdash; which only
+        matters if a real fraction of your traffic is genuinely routable. The harness reports that
+        fraction for the benchmark; your mileage is your own traffic.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Deliberately out of scope</h2></div>
+    <ul class="nongoals">
+      <li><b>Not a full multi-provider gateway.</b> LiteLLM already does that &mdash; AutoRoute can sit in front of or behind it.</li>
+      <li><b>Not a new state-of-the-art routing model.</b> Known-good strategies are integrated behind a pluggable <span class="mono">Router</span> interface and measured fairly.</li>
+      <li><b>Not a hosted service.</b> Self-hosted, single binary, your infrastructure, your keys.</li>
+      <li><b>No retraining to add a model.</b> Tiers and domain&rarr;tier rules are config, Arch-Router-style.</li>
+    </ul>
+  </section>
+
+  <footer>
+    AutoRoute &mdash; architecture reference. Prior art surveyed: RouteLLM, vLLM Semantic
+    Router, Not Diamond, Martian, Arch-Router / archgw, Aurelio semantic-router; benchmarks:
+    RouterBench, RouterArena (ICLR 2026). Traffic shares and confidence values in the
+    worked examples are illustrative, not measured production traffic &mdash; see
+    <code>eval/RESULTS.md</code> for the real numbers from the eval harness.
+  </footer>
+
+</div>
+
+</body></html>
