@@ -80,6 +80,12 @@ make docker  # distroless container image (CGO-free build)
 make demo    # proxy + Prometheus + Grafana via docker compose (:8080, :9090, :3000)
 ```
 
+Tagged releases publish the same image to GHCR — no local build needed:
+
+```sh
+docker pull ghcr.io/ngadakh/autoroute:latest
+```
+
 ## How it's built
 
 Four pieces, each shipped as its own milestone and still separable: a router
