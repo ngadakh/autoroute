@@ -1,5 +1,11 @@
 # AutoRoute
 
+[![build](https://github.com/ngadakh/autoroute/actions/workflows/build.yml/badge.svg)](https://github.com/ngadakh/autoroute/actions/workflows/build.yml)
+[![test](https://github.com/ngadakh/autoroute/actions/workflows/test.yml/badge.svg)](https://github.com/ngadakh/autoroute/actions/workflows/test.yml)
+[![lint](https://github.com/ngadakh/autoroute/actions/workflows/lint.yml/badge.svg)](https://github.com/ngadakh/autoroute/actions/workflows/lint.yml)
+[![fmt](https://github.com/ngadakh/autoroute/actions/workflows/fmt.yml/badge.svg)](https://github.com/ngadakh/autoroute/actions/workflows/fmt.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 An OpenAI-compatible LLM router that picks the cheapest model likely to answer a
 prompt well — built to run in production, not as a research demo.
 
@@ -22,7 +28,7 @@ build story and the numbers that didn't flatter it are in
 [`docs/BLOG.md`](docs/BLOG.md).
 
 Design and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · visual
-version: <https://claude.ai/code/artifact/acb0c124-dea8-43e5-ad7e-a7f5aa1e82c3>
+version: <https://claude.ai/artifact/NKpo7ZjUK5BCcgSmPFEpcJ>
 · M0 de-risking spike: [`SPIKE.md`](SPIKE.md)
 
 ## Quickstart
@@ -271,4 +277,4 @@ scripts/record-demo.sh  asciinema+agg fallback for docs/demo.gif (see docs/demo.
 
 ## License
 
-TBD (will be Apache-2.0).
+[Apache-2.0](LICENSE).

@@ -5,7 +5,7 @@
 > confidence values in the examples are illustrative pending the M4 eval run.
 >
 > Rendered / visual version:
-> <https://claude.ai/code/artifact/acb0c124-dea8-43e5-ad7e-a7f5aa1e82c3>
+> <https://claude.ai/artifact/NKpo7ZjUK5BCcgSmPFEpcJ>
 
 ## Overview
 
@@ -18,8 +18,8 @@ one. In between:
 - the **dispatcher** adds resilience — circuit breaker, fallback chain, retry
   budget, degrade-to-passthrough.
 
-Everything else (the embedding model, caches, stores, the shadow sampler) hangs
-off that spine and is observable.
+Everything else (the embedding model, the decision store, the shadow sampler)
+hangs off that spine and is observable.
 
 The routing *idea* is well-explored (RouteLLM, Not Diamond, Martian, Arch-Router,
 vLLM Semantic Router). The differentiator here is the production layer those
@@ -39,16 +39,14 @@ flowchart LR
 
         subgraph pipeline["router pipeline"]
             direction LR
-            L1["L1<br/>heuristics"] --> L2["L2<br/>embedding"] --> L3["L3<br/>judge"]
+            L1["L1<br/>heuristics"] --> L2["L2<br/>embedding"]
         end
 
         pipeline -->|tier| dispatch["dispatch<br/>breaker · fallback · retry"]
 
         embed[("embedding<br/>ONNX · in-process")] -. "cosine sim" .-> L2
-        judge[("judge model<br/>small / local")] -. "if conf &lt; θ" .-> L3
         catalogue[("catalogue<br/>price · p50/p95 · rules")] -. "prices · SLOs" .-> pipeline
         catalogue -.-> dispatch
-        cache[("semantic cache")] <-. "hit → skip pipeline" .-> pipeline
         pipeline -. "append decision" .-> store[("decision store")]
         dispatch -. "sample N%" .-> shadow["shadow sampler"]
     end
@@ -64,9 +62,8 @@ flowchart LR
 | Component | Responsibility |
 |---|---|
 | **ingest** | Parse the OpenAI request, authenticate, normalise. Pull the last user turn + context signals. |
-| **router pipeline** | L1 rules → L2 embedding classifier → L3 optional judge. Emits a `RouteDecision`. |
+| **router pipeline** | L1 rules → L2 embedding classifier with confidence bands. Emits a `RouteDecision`. |
 | **catalogue** | Config: model list, live prices, measured p50/p95 latency, and the domain→tier rules. |
-| **semantic cache** | Near-duplicate prompt → reuse the prior decision, skip the pipeline. |
 | **decision store** | Append-only log of every decision + features, for eval replay and debugging. |
 | **shadow sampler** | Replays N% of cheap-routed prompts against the frontier model, off the critical path, to catch silent quality loss. |
 | **dispatch** | Per-provider circuit breaker, fallback chain, retry budget, degrade-to-passthrough. |
@@ -97,14 +94,18 @@ flowchart TD
     L2 --> g2{"confidence band?"}
     g2 -->|"≥ θ_high"| emit
     g2 -->|"θ_low ≤ c &lt; θ_high"| def["conservative default tier"] --> emit
-    g2 -->|"&lt; θ_low  (judge enabled)"| L3["L3 — small-model judge"] --> emit
+    g2 -->|"&lt; θ_low"| def
 ```
 
-`θ_low` and `θ_high` are the two knobs. Widen the gap and more traffic reaches
-the judge (better decisions, more latency, a tiny cost); set `θ_low = 0` and the
-judge never runs. The uncertain middle band always resolves to the **conservative
-default** (frontier) — the router fails toward quality, and the metrics tell you
-how often it does.
+Above `θ_high`, L2's pick stands. Below it — whether in the uncertain middle
+band or under `θ_low` — the router falls back to the **conservative default**
+(frontier): it fails toward quality rather than guessing. The two sub-bands
+are tagged separately in the decision log and metrics
+(`L2-band-default` vs `degraded-low-confidence`) so you can tell them apart,
+but today they resolve identically. `θ_low` is a reserved knob for a future
+L3 judge layer that would arbitrate the low-confidence band instead of
+taking the default outright — not built yet (see
+`internal/router/pipeline.go`).
 
 ### Per-request latency & cost budget
 
@@ -112,7 +113,6 @@ how often it does.
 |---|---|--:|--:|---|
 | **L1 only** | Pure Go: tokenise, regex, feature checks | ~0.3 ms | $0 | large — most short / obvious prompts |
 | **+ L2** | One embedding (MiniLM / bge-small) in-process on CPU, nearest-cluster lookup | ~2–25 ms | ≈ $0 | most of the remainder |
-| **+ L3** | One call to a small / local judge model — never the frontier model | ~200–400 ms | ~$0.00004 | the uncertain band only — tunable, can be 0% |
 
 Measured L2 latency in the M0 spike: **warm p50 2.4 ms** on Apple Silicon CPU
 (see [`../SPIKE.md`](../SPIKE.md)).
@@ -126,13 +126,12 @@ Same pipeline every time; only the layer that decides changes.
 | A | "What is the capital of France?" | **L1** | 6 words · no code · single turn · factual-lookup shape | `cheap` |
 | B | "Prove the sum of the first n odd numbers is n²." | **L2**, conf 0.91 | nearest cluster "formal-math / proof" · difficulty 0.88 | `frontier` |
 | C | "Make this idiomatic and add type hints: `def f(x): …`" | **L1** | fenced code block · imperative edit verb · bounded scope | `mid` (code) |
-| D | "B2B pricing change, seats → usage. Is this a good idea?" | **L3** | L2 torn between "business-advice" and "casual-opinion" (conf 0.58 &lt; θ) → judge says "needs frontier" | `frontier` |
+| D | "B2B pricing change, seats → usage. Is this a good idea?" | **L2**, conf 0.58 (below θ_low) | L2 torn between "business-advice" and "casual-opinion" → low confidence, conservative default | `frontier` |
 | E | "Rewrite this sentence to sound more formal." | **L1** | short · rewrite verb · no context | `cheap` |
 | F | "Extract every date in this text and return JSON." | **L2** | nearest cluster "structured-extraction" | `mid` |
 
-With the judge disabled, D takes the conservative default (frontier) straight
-from L2's uncertain band — same route, no added latency, but the router can't
-tell you *why*.
+D lands in L2's low-confidence band, so it takes the conservative default
+(frontier) — no added latency, but (today) no second opinion either.
 
 **E · failure path.** Suppose E is routed `cheap` and the cheap provider returns
 `503`:
@@ -150,7 +149,8 @@ degrade to passthrough → a configured default model, metric emitted, never a h
 
 **F · silent-quality check (asynchronous).** After the cheap response is served,
 1 in N cheap-routed prompts is replayed against the frontier model off the
-critical path; both answers are scored (embedding similarity + judge) and the
+critical path; both answers are scored by embedding similarity
+(`1 - cosine(embed(cheap), embed(frontier))`, no judge model) and the
 delta recorded as `autoroute_shadow_quality_delta`. Alert if the rolling mean
 delta exceeds 0.15 — a worse-but-well-formed answer trips no error or latency
 alarm, and this is the only thing that catches it.
@@ -195,8 +195,7 @@ whether the deployed router is behaving like the eval said it would.
 ### Honest break-even
 
 Routing is a cost you add hoping to remove a bigger one. Embedding-only routing
-(~15 ms, ≈ $0) clears that bar almost always. The judge (~300 ms, a fraction of a
-cent) only pays off on genuinely ambiguous prompts and must be switchable off.
+(~15 ms, ≈ $0) clears that bar almost always.
 The saving is the model price gap avoided — frontier ≈ $15 / M output vs cheap
 ≈ $0.25 / M — which only matters if a real fraction of traffic is genuinely
 routable. The harness reports that fraction for the benchmark; production mileage
