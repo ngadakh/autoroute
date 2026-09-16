@@ -349,6 +349,18 @@
         <p>Drop-in <code>/v1/chat/completions</code>, streaming and non-streaming, same request/response schema — point an existing client at it.</p>
       </div>
     </div>
+
+    <figure class="demo" style="margin-top:28px">
+      <img src="dashboard.png" alt="Grafana dashboard: HTTP request rate and p95 latency, plus route decisions by tier and layer climbing as traffic ramps up, with the router-degraded rate tracking requests that fell through to the conservative default tier." loading="lazy">
+      <figcaption class="demo-cap">
+        The provisioned Grafana dashboard (<code>make demo</code>), captured against a live run —
+        <b>route decisions by tier &amp; layer</b> shows real traffic split across
+        <code>cheap</code>/<code>mid</code>/<code>frontier</code>, and <b>router-degraded rate</b> is
+        every request that fell through to the conservative default because this build has no L2
+        embedder. Fallback rate, breaker trips, and shadow quality delta aren't pictured — a healthy
+        demo run has nothing on them yet.
+      </figcaption>
+    </figure>
   </section>
 
   <section class="band">
