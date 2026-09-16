@@ -15,8 +15,8 @@ milestone, including the results that didn't flatter it.
 
 The first milestone wasn't the router — it was proving the routing *brain*
 could work at all, in isolation, before wiring it into anything a client would
-depend on. `SPIKE.md` embeds a handful of worked-example prompts with an
-in-process ONNX model (all-MiniLM-L6-v2, no network call, no external
+depend on. `cmd/spike-embed` embeds a handful of worked-example prompts with
+an in-process ONNX model (all-MiniLM-L6-v2, no network call, no external
 embedding API) and checks that nearest-centroid classification separates
 "what's 2+2" from "refactor this distributed cache eviction policy" the way
 you'd expect. Cheap to fail fast on, if it hadn't worked.

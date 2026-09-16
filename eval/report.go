@@ -16,7 +16,7 @@ type Summary struct {
 	BaselineCost     float64        `json:"baseline_cost"`
 	RoutedScoreSum   float64        `json:"routed_score_sum"`
 	BaselineScoreSum float64        `json:"baseline_score_sum"`
-	CheapModelRecall float64        `json:"cheap_model_recall"` // see docs/ARCHITECTURE.md's autoroute_cheap_model_recall
+	CheapModelRecall float64        `json:"cheap_model_recall"` // of prompts a cheap model could have handled, the share actually routed cheap - see docs/ARCHITECTURE.md's "What gets measured"
 	ByLayer          map[string]int `json:"by_layer"`           // router.LayerL1/L2/... -> row count
 	ByTier           map[string]int `json:"by_tier"`            // cheap/mid/frontier -> row count
 }
