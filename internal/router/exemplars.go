@@ -1,7 +1,8 @@
-// Package router holds the L2 embedding classifier used by the spike: a set of
-// labelled route exemplars, one centroid per route, and nearest-centroid
-// assignment with a confidence margin. The real pipeline will layer heuristics
-// (L1) and an optional judge (L3) around this; the spike only exercises L2.
+// Package router is the two-stage routing pipeline the proxy actually runs:
+// L1 pure-Go heuristics first (heuristics.go), then, only on a miss, an L2
+// nearest-centroid embedding classifier (classify.go) over the labelled route
+// exemplars below, with confidence bands deciding when to trust it
+// (pipeline.go). See internal/proxy/route.go for the call site.
 package router
 
 // Tier is the model class a prompt is routed to.
@@ -21,7 +22,7 @@ type Route struct {
 }
 
 // Routes is the seed taxonomy. Exemplars are intentionally short and varied;
-// they are the only "training data" the L2 classifier has in the spike.
+// they are the only "training data" the L2 classifier has.
 var Routes = []Route{
 	{
 		Name: "factual-lookup", Tier: TierCheap,
