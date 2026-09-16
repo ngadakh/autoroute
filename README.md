@@ -95,7 +95,7 @@ ones, and a detector for the failure mode that trips no alarm at all. The
 build story behind each is in [`docs/BLOG.md`](docs/BLOG.md); this section is
 the reference version.
 
-### The layered router (M2)
+### The layered router
 
 `configs/catalogue.yaml`'s `router:` block turns on routing: a request naming
 `router.trigger_model` (default `auto`) is classified into a tier —
@@ -126,7 +126,7 @@ L2 needs the ONNX Runtime CGo binding; L1 doesn't. So:
 `make run`/`make test` are always `CGO_ENABLED=1` and pick up L2 automatically
 once `make setup` has run, otherwise degrade the same way.
 
-### Reliability & observability (M3)
+### Reliability & observability
 
 Every outgoing call — a direct-named request or a routed one — goes through
 `internal/reliability`: a circuit breaker per **provider** (not per tier), so
@@ -161,7 +161,7 @@ helm install autoroute deploy/helm/autoroute
 No Ingress, HPA, PodDisruptionBudget, or ServiceMonitor CRD — bring your own
 if you need them; see `deploy/helm/autoroute/templates/NOTES.txt`.
 
-### Eval harness (M4)
+### Eval harness
 
 `eval/` replays [RouterBench](https://huggingface.co/datasets/withmartian/routerbench)
 (36,497 real prompts across 86 benchmark categories — MMLU, HellaSwag, GSM8K,
@@ -191,7 +191,7 @@ human decision, not a bot's.
 
 See [`eval/RESULTS.md`](eval/RESULTS.md) for the actual numbers.
 
-### Shadow detector (M5)
+### Shadow detector
 
 A worse-but-well-formed cheap-tier answer trips no error or latency alarm —
 `internal/shadow` is the only thing that catches it. `configs/catalogue.yaml`'s
